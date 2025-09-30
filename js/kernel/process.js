@@ -18,6 +18,7 @@ export const processManager = {
         processList.set(pid, process);
 
         try {
+            // Asigură-te că fișierul din disc se numește "ls.js"
             const module = await import(`/js/bin/${proc.name}.js`);
             const logic = module.default;
 

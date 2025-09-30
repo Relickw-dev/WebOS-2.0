@@ -13,6 +13,7 @@ export const shell = {
         });
         eventBus.on('shell.input', handleInput);
         logger.info('Shell: Initialized.');
+        updatePrompt();
     }
 };
 
