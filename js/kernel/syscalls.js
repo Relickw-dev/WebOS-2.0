@@ -18,6 +18,11 @@ export const syscalls = {
             eventBus.emit('vfs.stat', { path, resolve, reject });
         });
     },
+    'vfs.mkdir': async ({ path }) => {
+        return new Promise((resolve, reject) => {
+            eventBus.emit('vfs.mkdir', { path, resolve, reject });
+        });
+    },
     // Adaugă aici alte apeluri de sistem
 };
 

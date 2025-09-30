@@ -92,12 +92,17 @@ router.post('/mkdir', async (req, res) => {
         return res.status(400).json({ error: 'Path is required' });
     }
     const fullPath = getFullPath(dirPath);
-    await fs.mkdir(fullPath); // Nu folosim { recursive: true } pentru a imita comportamentul standard
+    // Nu folosim { recursive: true } pentru a imita comportamentul standard 'mkdir'
+    // care eșuează dacă părintele nu există.
+    await fs.mkdir(fullPath); 
     res.json({ success: true });
   } catch (err) {
     if (err.code === 'EEXIST') {
-        res.status(409).json({ error: `mkdir: ${dirPath}: File exists` });
-    } else {
+        res.status(409).json({ error: `mkdir: cannot create directory ‘${dirPath}’: File exists` });
+    } else if (err.code === 'ENOENT') {
+        res.status(404).json({ error: `mkdir: cannot create directory ‘${dirPath}’: No such file or directory` });
+    }
+    else {
         res.status(500).json({ error: err.message });
     }
   }
