@@ -4,6 +4,8 @@ import { logger } from '../utils/logger.js';
 import { syscall } from '../kernel/syscalls.js';
 
 let currentDirectory = '/';
+const commandHistory = [];
+let historyIndex = 0;
 
 // Funcție ajutătoare pentru a rezolva căile relative
 function resolvePath(basePath, newPath) {
@@ -17,16 +19,12 @@ function resolvePath(basePath, newPath) {
     for (const part of newParts) {
         if (part === '..') {
             baseParts.pop();
-        } else if (part !== '.') {
+        } else if (part !== '.' && part !== '') {
             baseParts.push(part);
         }
     }
 
-    let resolvedPath = '/' + baseParts.join('/');
-    if (resolvedPath === '') {
-        resolvedPath = '/';
-    }
-    return resolvedPath;
+    return '/' + baseParts.join('/');
 }
 
 export const shell = {
@@ -36,6 +34,11 @@ export const shell = {
             updatePrompt();
         });
         eventBus.on('shell.input', handleInput);
+        
+        eventBus.on('shell.history.prev', handlePrevHistory);
+        eventBus.on('shell.history.next', handleNextHistory);
+        eventBus.on('shell.autocomplete', handleAutocomplete);
+
         logger.info('Shell: Initialized.');
         updatePrompt();
     }
@@ -50,35 +53,64 @@ async function handleInput({ value }) {
     syscall('terminal.write', { message: commandString, isPrompt: true });
     
     if (commandString) {
+        commandHistory.push(commandString);
+        historyIndex = commandHistory.length;
+
         const [commandName, ...args] = commandString.split(' ');
         
-        // Implementarea comenzii cd
+        // --- LOGICA CD SIMPLIFICATĂ ȘI CORECTATĂ ---
         if (commandName === 'cd') {
             const targetPath = args.length > 0 ? args[0] : '/';
-            const newPath = resolvePath(currentDirectory, targetPath);
+
+            // Cazuri speciale simple (rădăcină, acasă)
+            if (targetPath === '/' || targetPath === '~') {
+                currentDirectory = '/';
+                updatePrompt();
+                return;
+            }
+
+            const resolvedTargetPath = resolvePath(currentDirectory, targetPath);
+
+            // Pentru 'cd ..' sau alte căi care se rezolvă la un director existent,
+            // încercăm mai întâi o validare rapidă.
+            if (targetPath.includes('..')) {
+                 try {
+                    const stat = await syscall('vfs.stat', { path: resolvedTargetPath });
+                    if (stat && stat.type === 'dir') {
+                        currentDirectory = resolvedTargetPath;
+                        updatePrompt();
+                        return;
+                    }
+                 } catch(e) { /* Ignorăm eroarea și lăsăm logica principală să ruleze */ }
+            }
+
+            // Logica principală: găsește părintele, listează și caută case-insensitive
+            const pathParts = resolvedTargetPath.split('/').filter(p => p);
+            const targetName = pathParts.pop() || '';
+            const parentPath = '/' + pathParts.join('/');
 
             try {
-                // Sincronizează calea cu VFS pentru a valida destinația
-                const stat = await syscall('vfs.stat', { path: newPath });
+                const parentEntries = await syscall('vfs.readDir', { path: parentPath });
                 
-                if (!stat) {
-                    // Calea nu a returnat nicio informație (nu există)
-                    syscall('terminal.write', { type: 'error', message: `cd: ${targetPath}: No such file or directory` });
-                } else if (stat.type === 'directory') {
-                    // Calea există și este un director, actualizăm directorul curent
-                    currentDirectory = newPath;
-                } else {
-                    // Calea există, dar nu este un director
+                const match = parentEntries.find(entry => entry.name.toLowerCase() === targetName.toLowerCase());
+
+                if (match && match.type === 'dir') {
+                    // Succes! Construim calea finală cu numele corect.
+                    const finalPath = [parentPath, match.name].join('/').replace(/\/+/g, '/');
+                    currentDirectory = finalPath;
+                } else if (match) {
                     syscall('terminal.write', { type: 'error', message: `cd: ${targetPath}: Not a directory` });
+                } else {
+                    syscall('terminal.write', { type: 'error', message: `cd: ${targetPath}: No such file or directory` });
                 }
             } catch (e) {
-                // Prinde orice eroare de sistem la apelul vfs.stat
                 syscall('terminal.write', { type: 'error', message: `cd: ${targetPath}: No such file or directory` });
             }
 
             updatePrompt();
             return;
         }
+        // --- SFÂRȘIT LOGICA CD ---
 
         if (commandName === 'clear') {
             syscall('terminal.clear');
@@ -86,7 +118,6 @@ async function handleInput({ value }) {
             return;
         }
 
-        // Comenzi externe (trimise către kernel)
         const pipeline = [{ name: commandName, args }];
         eventBus.emit('proc.exec', {
             pipeline,
@@ -96,5 +127,49 @@ async function handleInput({ value }) {
         });
     } else {
         updatePrompt();
+    }
+}
+
+function handlePrevHistory() {
+    if (historyIndex > 0) {
+        historyIndex--;
+        eventBus.emit('terminal.set_input', { value: commandHistory[historyIndex] });
+    }
+}
+
+function handleNextHistory() {
+    if (historyIndex < commandHistory.length - 1) {
+        historyIndex++;
+        eventBus.emit('terminal.set_input', { value: commandHistory[historyIndex] });
+    } else {
+        historyIndex = commandHistory.length;
+        eventBus.emit('terminal.set_input', { value: '' });
+    }
+}
+
+async function handleAutocomplete({ value }) {
+    const parts = value.split(' ');
+    const toComplete = parts[parts.length - 1];
+
+    if (!toComplete) return;
+
+    try {
+        const entries = await syscall('vfs.readDir', { path: currentDirectory });
+        const matches = entries.filter(entry => entry.name.toLowerCase().startsWith(toComplete.toLowerCase()));
+
+        if (matches.length === 1) {
+            let completedName = matches[0].name;
+            if (matches[0].type === 'dir') {
+                completedName += '/';
+            }
+            parts[parts.length - 1] = completedName;
+            const newValue = parts.join(' ');
+            eventBus.emit('terminal.set_input', { value: newValue });
+        } else if (matches.length > 1) {
+            const names = matches.map(m => m.name).join('\n');
+            syscall('terminal.write', { message: names });
+        }
+    } catch (e) {
+        logger.error(`Autocomplete failed: ${e.message}`);
     }
 }

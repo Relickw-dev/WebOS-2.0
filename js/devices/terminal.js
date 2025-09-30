@@ -31,11 +31,36 @@ const terminal = {
             output.innerHTML = '';
         });
 
+        // Listener nou: setează valoarea input-ului și mută cursorul la final
+        eventBus.on('terminal.set_input', ({ value }) => {
+            input.value = value;
+            input.focus();
+            input.setSelectionRange(value.length, value.length);
+        });
+
+        // Listener `keydown` actualizat pentru a gestiona mai multe taste
         input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                eventBus.emit('shell.input', { value: input.value });
-                input.value = '';
+            switch (e.key) {
+                case 'Enter':
+                    e.preventDefault();
+                    eventBus.emit('shell.input', { value: input.value });
+                    input.value = '';
+                    break;
+                
+                case 'ArrowUp':
+                    e.preventDefault();
+                    eventBus.emit('shell.history.prev');
+                    break;
+                    
+                case 'ArrowDown':
+                    e.preventDefault();
+                    eventBus.emit('shell.history.next');
+                    break;
+
+                case 'Tab':
+                    e.preventDefault();
+                    eventBus.emit('shell.autocomplete', { value: input.value });
+                    break;
             }
         });
         

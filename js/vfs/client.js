@@ -29,7 +29,7 @@ export const vfsClient = {
         });
     },
     mkdir: async (path) => {
-        return fetchApi(`/mkdir`, {
+        return fetchApi('/mkdir', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path })
