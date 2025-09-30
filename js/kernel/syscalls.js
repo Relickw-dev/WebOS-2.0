@@ -23,6 +23,11 @@ export const syscalls = {
             eventBus.emit('vfs.mkdir', { path, resolve, reject });
         });
     },
+    'vfs.writeFile': async ({ path }) => {
+        return new Promise((resolve, reject) => {
+            eventBus.emit('vfs.writeFile', { path, resolve, reject });
+        });
+    },
     // Adaugă aici alte apeluri de sistem
 };
 

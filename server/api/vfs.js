@@ -73,15 +73,36 @@ router.get('/read', async (req, res) => {
 
 // POST /api/vfs/write
 router.post('/write', async (req, res) => {
-  const { path: filePath, content, append } = req.body;
-  const flags = append ? 'a' : 'w';
-  try {
-    const fullPath = getFullPath(filePath);
-    await fs.writeFile(fullPath, content, { encoding: 'utf8', flag: flags });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  const { path: filePath, content, append } = req.body;
+  const flags = append ? 'a' : 'w';
+
+  try {
+    // Validare de bază pentru a ne asigura că primim datele necesare
+    if (typeof filePath !== 'string' || content === undefined) {
+      return res.status(400).json({ error: 'Path and content are required.' });
+    }
+
+    const fullPath = getFullPath(filePath);
+    const dirPath = path.dirname(fullPath);
+
+    // Pasul cheie: Asigură-te că directorul părinte există.
+    // `{ recursive: true }` funcționează ca `mkdir -p`, creând toate directoarele necesare.
+    await fs.mkdir(dirPath, { recursive: true });
+
+    // Acum putem scrie fișierul în siguranță
+    await fs.writeFile(fullPath, content, { encoding: 'utf8', flag: flags });
+    res.json({ success: true });
+
+  } catch (err) {
+    // Gestionare îmbunătățită a erorilor pentru a oferi feedback util
+    if (err.code === 'ENOENT') {
+      res.status(404).json({ error: `write: cannot create file ‘${filePath}’: No such file or directory` });
+    } else if (err.code === 'EISDIR') {
+      res.status(400).json({ error: `write: cannot write to ‘${filePath}’: It is a directory` });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
+  }
 });
 
 // POST /api/vfs/mkdir
