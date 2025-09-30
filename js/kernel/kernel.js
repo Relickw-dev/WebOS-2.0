@@ -1,5 +1,5 @@
 // File: js/kernel/kernel.js
-import { eventBus } from '../eventBuss.js';
+import { eventBus } from '../eventBus.js';
 import { syscalls } from './syscalls.js';
 import { processManager } from './process.js';
 import { logger } from '../utils/logger.js';
