@@ -18,14 +18,20 @@ export const processManager = {
         processList.set(pid, process);
 
         try {
-            // Asigură-te că fișierul din disc se numește "ls.js"
+            // Se importă dinamic fișierul comenzii
             const module = await import(`/js/bin/${proc.name}.js`);
-            const logic = module.default;
+            
+            // Se verifică dacă funcția `logic` este exportată
+            const logic = module.logic;
+
+            if (typeof logic !== 'function') {
+                throw new Error(`Command '${proc.name}' logic is not a valid function.`);
+            }
 
             const stdout = { write: (data) => onOutput(data) };
             const context = { cwd, stdout };
 
-            const exitCode = await logic(proc.args, context);
+            const exitCode = await logic({ args: proc.args, onOutput, cwd });
             process.status = 'exited';
             onExit(exitCode);
         } catch (e) {

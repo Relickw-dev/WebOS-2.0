@@ -41,6 +41,7 @@ const terminal = {
         
         logger.info('Terminal Driver: Initialized.');
     }
+    
 };
 
 export default terminal;

@@ -52,22 +52,36 @@ async function handleInput({ value }) {
     if (commandString) {
         const [commandName, ...args] = commandString.split(' ');
         
-        // Comenzi interne
+        // Implementarea comenzii cd
         if (commandName === 'cd') {
             const targetPath = args.length > 0 ? args[0] : '/';
             const newPath = resolvePath(currentDirectory, targetPath);
 
             try {
+                // Sincronizează calea cu VFS pentru a valida destinația
                 const stat = await syscall('vfs.stat', { path: newPath });
-                if (stat.type === 'directory') {
+                
+                if (!stat) {
+                    // Calea nu a returnat nicio informație (nu există)
+                    syscall('terminal.write', { type: 'error', message: `cd: ${targetPath}: No such file or directory` });
+                } else if (stat.type === 'directory') {
+                    // Calea există și este un director, actualizăm directorul curent
                     currentDirectory = newPath;
                 } else {
+                    // Calea există, dar nu este un director
                     syscall('terminal.write', { type: 'error', message: `cd: ${targetPath}: Not a directory` });
                 }
             } catch (e) {
+                // Prinde orice eroare de sistem la apelul vfs.stat
                 syscall('terminal.write', { type: 'error', message: `cd: ${targetPath}: No such file or directory` });
             }
 
+            updatePrompt();
+            return;
+        }
+
+        if (commandName === 'clear') {
+            syscall('terminal.clear');
             updatePrompt();
             return;
         }
