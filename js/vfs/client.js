@@ -1,3 +1,5 @@
+
+
 // File: js/vfs/client.js
 const API_BASE_URL = 'http://localhost:3000/api/vfs';
 
@@ -21,11 +23,19 @@ export const vfsClient = {
         }
         return response.text();
     },
+    
+    
     writeFile: async (path, content, append = false) => {
+        const requestBody = { path, content, append };
+
+        // --- PUNCT DE DEPANARE ---
+        // Această linie va afișa în consola browserului exact ce se trimite către server.
+        console.log('Sending to /write:', JSON.stringify(requestBody));
+
         return fetchApi(`/write`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path, content, append })
+            body: JSON.stringify(requestBody)
         });
     },
     mkdir: async (path) => {

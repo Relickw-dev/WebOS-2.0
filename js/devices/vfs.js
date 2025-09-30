@@ -19,6 +19,10 @@ const vfs = {
         });
         
         eventBus.on('vfs.writeFile', (params) => {
+            // --- PUNCT DE DEPANARE FINAL ---
+            // Acest log este cel mai important. Ar trebui să vedem 'content' aici.
+            console.log('vfs.js received vfs.writeFile event with params:', params);
+
             vfsClient.writeFile(params.path, params.content, params.append).then(params.resolve).catch(params.reject);
         });
         
