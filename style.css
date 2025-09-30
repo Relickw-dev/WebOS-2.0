@@ -1,0 +1,83 @@
+/* File: style.css */
+body {
+    background-color: #1a1a1a;
+    color: white;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 14px;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+}
+
+#container {
+    width: 80%;
+    height: 80%;
+    border: 2px solid white;
+    background-color: #000;
+    padding: 10px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#terminal {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: white #000;
+}
+
+#terminal::-webkit-scrollbar {
+    width: 8px;
+}
+
+#terminal::-webkit-scrollbar-track {
+    background: #000;
+}
+
+#terminal::-webkit-scrollbar-thumb {
+    background-color: white;
+    border-radius: 4px;
+}
+
+#terminal-output {
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+#terminal-output p {
+    margin: 0;
+    line-height: 1.2;
+}
+
+.prompt-line {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    padding-top: 5px;
+}
+
+#prompt {
+    margin-right: 5px;
+}
+
+#terminal-input {
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    flex-grow: 1;
+    outline: none;
+    caret-color: white;
+}
+
+.error {
+    color: #ff3333;
+}

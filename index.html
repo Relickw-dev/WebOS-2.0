@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebOS Terminal</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main id="container" tabindex="0">
+        <div id="terminal">
+            <div id="terminal-output"></div>
+            <div id="current-line" class="prompt-line">
+                <span id="prompt"></span>
+                <input type="text" id="terminal-input" autocomplete="off" />
+            </div>
+        </div>
+    </main>
+    
+    <script type="module" src="./js/main.js"></script>
+</body>
+</html>
