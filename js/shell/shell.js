@@ -5,6 +5,30 @@ import { syscall } from '../kernel/syscalls.js';
 
 let currentDirectory = '/';
 
+// Funcție ajutătoare pentru a rezolva căile relative
+function resolvePath(basePath, newPath) {
+    if (newPath.startsWith('/')) {
+        return newPath;
+    }
+
+    const baseParts = basePath.split('/').filter(p => p.length > 0);
+    const newParts = newPath.split('/');
+    
+    for (const part of newParts) {
+        if (part === '..') {
+            baseParts.pop();
+        } else if (part !== '.') {
+            baseParts.push(part);
+        }
+    }
+
+    let resolvedPath = '/' + baseParts.join('/');
+    if (resolvedPath === '') {
+        resolvedPath = '/';
+    }
+    return resolvedPath;
+}
+
 export const shell = {
     init: () => {
         eventBus.on('kernel.boot_complete', () => {
@@ -21,7 +45,7 @@ function updatePrompt() {
     document.getElementById('prompt').textContent = `user@webos:${currentDirectory}$`;
 }
 
-function handleInput({ value }) {
+async function handleInput({ value }) {
     const commandString = value.trim();
     syscall('terminal.write', { message: commandString, isPrompt: true });
     
@@ -30,11 +54,20 @@ function handleInput({ value }) {
         
         // Comenzi interne
         if (commandName === 'cd') {
-            // Logica pentru 'cd' rămâne aici, deoarece modifică starea shell-ului (currentDirectory)
             const targetPath = args.length > 0 ? args[0] : '/';
-            // TODO: Implementează logica de rezolvare a căii și de validare cu vfs.stat
-            // Pentru moment, doar actualizează calea
-            currentDirectory = targetPath;
+            const newPath = resolvePath(currentDirectory, targetPath);
+
+            try {
+                const stat = await syscall('vfs.stat', { path: newPath });
+                if (stat.type === 'directory') {
+                    currentDirectory = newPath;
+                } else {
+                    syscall('terminal.write', { type: 'error', message: `cd: ${targetPath}: Not a directory` });
+                }
+            } catch (e) {
+                syscall('terminal.write', { type: 'error', message: `cd: ${targetPath}: No such file or directory` });
+            }
+
             updatePrompt();
             return;
         }
