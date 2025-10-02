@@ -4,9 +4,10 @@ import { logger } from '../utils/logger.js';
 import { syscall } from '../kernel/syscalls.js';
 
 let currentDirectory = '/';
-const commandHistory = [];
+const commandHistory = []; // Această variabilă rămâne aici
 let historyIndex = 0;
 
+// ... (funcțiile displayWelcomeMessage și resolvePath rămân neschimbate) ...
 function displayWelcomeMessage() {
     const welcomeArt = `
 ██╗    ██╗███████╗██████╗  ██████╗ ███████╗
@@ -21,7 +22,6 @@ function displayWelcomeMessage() {
     syscall('terminal.write', { message: welcomeArt });
     syscall('terminal.write', { message: welcomeMessage });
 }
-// Funcție ajutătoare pentru a rezolva căile relative
 function resolvePath(basePath, newPath) {
     if (newPath.startsWith('/')) {
         return newPath;
@@ -41,6 +41,7 @@ function resolvePath(basePath, newPath) {
     return '/' + baseParts.join('/');
 }
 
+
 export const shell = {
     init: () => {
         eventBus.on('kernel.boot_complete', () => {
@@ -53,15 +54,72 @@ export const shell = {
         eventBus.on('shell.history.next', handleNextHistory);
         eventBus.on('shell.autocomplete', handleAutocomplete);
 
+        // --- MODIFICARE CHEIE 1: Adăugăm un listener pentru noul syscall ---
+        // Acum, shell-ul acționează ca un serviciu care oferă istoricul la cerere.
+        eventBus.on('syscall.shell.get_history', ({ resolve }) => {
+            resolve(commandHistory);
+        });
+
         logger.info('Shell: Initialized.');
         updatePrompt();
         displayWelcomeMessage(); 
     }
 };
 
+// ... (funcția updatePrompt și logica de parsare rămân neschimbate) ...
 function updatePrompt() {
     document.getElementById('prompt').textContent = `user@webos:${currentDirectory}$`;
 }
+function parseCommand(commandString) {
+    const parts = commandString.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
+    return parts.map(part => {
+        if ((part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
+            return part.slice(1, -1);
+        }
+        return part;
+    });
+}
+function parsePipeline(fullCommand) {
+    const pipeline = [];
+    const commands = fullCommand.split('|').map(c => c.trim());
+
+    for (let i = 0; i < commands.length; i++) {
+        let commandStr = commands[i];
+        let outputFile = null;
+        let append = false;
+        let stdout = 'terminal';
+
+        if (commandStr.includes('>>')) {
+            const parts = commandStr.split('>>').map(p => p.trim());
+            commandStr = parts[0];
+            outputFile = parts[1].split(' ')[0];
+            stdout = 'file';
+            append = true;
+        } else if (commandStr.includes('>')) {
+            const parts = commandStr.split('>').map(p => p.trim());
+            commandStr = parts[0];
+            outputFile = parts[1].split(' ')[0];
+            stdout = 'file';
+        }
+
+        const [name, ...args] = parseCommand(commandStr);
+
+        pipeline.push({
+            name,
+            args,
+            stdout,
+            outputFile,
+            append
+        });
+    }
+
+    for (let i = 0; i < pipeline.length - 1; i++) {
+        pipeline[i].stdout = 'pipe';
+    }
+
+    return pipeline;
+}
+
 
 async function handleInput({ value }) {
     const commandString = value.trim();
@@ -71,23 +129,21 @@ async function handleInput({ value }) {
         commandHistory.push(commandString);
         historyIndex = commandHistory.length;
 
-        const [commandName, ...args] = commandString.split(' ');
+        const [commandName] = commandString.split(' ');
         
-        // --- LOGICA CD SIMPLIFICATĂ ȘI CORECTATĂ ---
+        // --- MODIFICARE CHEIE 2: Eliminăm logica specială pentru 'history' ---
+        // Comanda `history` va fi acum tratată ca orice altă comandă prin pipeline.
         if (commandName === 'cd') {
+            const [, ...args] = commandString.split(' ');
             const targetPath = args.length > 0 ? args[0] : '/';
 
-            // Cazuri speciale simple (rădăcină, acasă)
+            // ... (restul logicii pentru 'cd' rămâne neschimbată)
             if (targetPath === '/' || targetPath === '~') {
                 currentDirectory = '/';
                 updatePrompt();
                 return;
             }
-
             const resolvedTargetPath = resolvePath(currentDirectory, targetPath);
-
-            // Pentru 'cd ..' sau alte căi care se rezolvă la un director existent,
-            // încercăm mai întâi o validare rapidă.
             if (targetPath.includes('..')) {
                  try {
                     const stat = await syscall('vfs.stat', { path: resolvedTargetPath });
@@ -96,21 +152,16 @@ async function handleInput({ value }) {
                         updatePrompt();
                         return;
                     }
-                 } catch(e) { /* Ignorăm eroarea și lăsăm logica principală să ruleze */ }
+                 } catch(e) { /* Ignorăm */ }
             }
-
-            // Logica principală: găsește părintele, listează și caută case-insensitive
             const pathParts = resolvedTargetPath.split('/').filter(p => p);
             const targetName = pathParts.pop() || '';
             const parentPath = '/' + pathParts.join('/');
-
             try {
                 const parentEntries = await syscall('vfs.readDir', { path: parentPath });
-                
                 const match = parentEntries.find(entry => entry.name.toLowerCase() === targetName.toLowerCase());
 
                 if (match && match.type === 'dir') {
-                    // Succes! Construim calea finală cu numele corect.
                     const finalPath = [parentPath, match.name].join('/').replace(/\/+/g, '/');
                     currentDirectory = finalPath;
                 } else if (match) {
@@ -121,11 +172,9 @@ async function handleInput({ value }) {
             } catch (e) {
                 syscall('terminal.write', { type: 'error', message: `cd: ${targetPath}: No such file or directory` });
             }
-
             updatePrompt();
             return;
         }
-        // --- SFÂRȘIT LOGICA CD ---
 
         if (commandName === 'clear') {
             syscall('terminal.clear');
@@ -133,27 +182,13 @@ async function handleInput({ value }) {
             return;
         }
 
-        if (commandName === 'history') {
-            // Formatăm istoricul comenzilor într-un singur string, cu fiecare comandă pe un rând nou
-            const formattedHistory = commandHistory
-                .map((cmd, index) => {
-                    // Adăugăm numărul liniei, aliniat la dreapta pentru un aspect curat
-                    const lineNumber = (index + 1).toString().padStart(4, ' ');
-                    return `${lineNumber}  ${cmd}`;
-                })
-                .join('\n');
+        // --- Blocul "if (commandName === 'history')" a fost ȘTERS de aici ---
 
-            // Afișăm istoricul formatat
-            syscall('terminal.write', { message: formattedHistory });
-            
-            updatePrompt();
-            return;
-        }
-
-        const pipeline = [{ name: commandName, args }];
+        const pipeline = parsePipeline(commandString);
+        
         eventBus.emit('proc.exec', {
             pipeline,
-            onOutput: (data) => syscall('terminal.write', { message: data.message, type: data.type }),
+            onOutput: (data) => syscall('terminal.write', { message: data.message, type: data.type, isHtml: data.isHtml }),
             onExit: () => updatePrompt(),
             cwd: currentDirectory
         });
@@ -162,13 +197,13 @@ async function handleInput({ value }) {
     }
 }
 
+// ... (restul fișierului: handlePrevHistory, handleNextHistory, handleAutocomplete rămân neschimbate) ...
 function handlePrevHistory() {
     if (historyIndex > 0) {
         historyIndex--;
         eventBus.emit('terminal.set_input', { value: commandHistory[historyIndex] });
     }
 }
-
 function handleNextHistory() {
     if (historyIndex < commandHistory.length - 1) {
         historyIndex++;
@@ -178,7 +213,6 @@ function handleNextHistory() {
         eventBus.emit('terminal.set_input', { value: '' });
     }
 }
-
 async function handleAutocomplete({ value }) {
     const parts = value.split(' ');
     const toComplete = parts[parts.length - 1];
