@@ -44,5 +44,12 @@ export const vfsClient = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path })
         });
+    },
+    rm: async (path, recursive = false) => {
+        return fetchApi('/rm', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path, recursive })
+        });
     }
 };

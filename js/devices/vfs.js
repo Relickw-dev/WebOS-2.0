@@ -30,6 +30,10 @@ const vfs = {
             vfsClient.mkdir(params.path).then(params.resolve).catch(params.reject);
         });
 
+        eventBus.on('vfs.rm', (params) => {
+            vfsClient.rm(params.path, params.recursive).then(params.resolve).catch(params.reject);
+        });
+
         logger.info('VFS Driver: Initialized.');
     }
 };

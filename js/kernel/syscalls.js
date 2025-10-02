@@ -27,6 +27,11 @@ export const syscalls = {
         return new Promise((resolve, reject) => {
             eventBus.emit('vfs.writeFile', { ...params, resolve, reject });
         });
+    },
+    'vfs.rm': (params) => {
+        return new Promise((resolve, reject) => {
+            eventBus.emit('vfs.rm', { ...params, resolve, reject });
+        });
     }
     // Adaugă aici alte apeluri de sistem
 };

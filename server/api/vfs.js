@@ -129,4 +129,34 @@ router.post('/mkdir', async (req, res) => {
   }
 });
 
+router.delete('/rm', async (req, res) => {
+  const { path: targetPath, recursive } = req.body;
+  try {
+    if (!targetPath) {
+      return res.status(400).json({ error: 'Path is required' });
+    }
+    const fullPath = getFullPath(targetPath);
+
+    // Folosim fs.rm care poate șterge atât fișiere, cât și directoare (dacă recursive: true)
+    await fs.rm(fullPath, { recursive: !!recursive }); // !!recursive convertește valoarea în boolean
+    
+    res.json({ success: true });
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      res.status(404).json({ error: `rm: cannot remove '${targetPath}': No such file or directory` });
+    } else if (err.code === 'ENOTDIR' && !recursive) {
+        // Aceasta eroare nu ar trebui sa apara cu fs.rm, dar o prindem preventiv
+        res.status(400).json({ error: `rm: cannot remove '${targetPath}': Not a directory` });
+    }
+     else if (err.code === 'EISDIR' && !recursive) {
+        // Eroare specifică pentru când încercăm să ștergem un director fără -r
+        res.status(400).json({ error: `rm: cannot remove '${targetPath}': Is a directory` });
+    }
+    else {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
+
+
 module.exports = router;
