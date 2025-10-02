@@ -21,7 +21,7 @@ export const vfsClient = {
             const error = await response.json();
             throw new Error(error.error || 'Server error');
         }
-        return response.text();
+        return response.text(); // Așteptăm text, nu JSON
     },
     
     
@@ -51,5 +51,26 @@ export const vfsClient = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path, recursive })
         });
-    }
+    },
+    copyFile: async (source, destination, recursive = false) => {
+        return fetchApi('/copy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source, destination, recursive })
+        });
+    },
+    move: async (source, destination) => {
+        return fetchApi('/move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source, destination })
+        });
+    },
+    grep: async (path, pattern) => {
+        return fetchApi('/grep', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path, pattern })
+        });
+    },
 };

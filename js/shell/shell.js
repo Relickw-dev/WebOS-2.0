@@ -7,6 +7,20 @@ let currentDirectory = '/';
 const commandHistory = [];
 let historyIndex = 0;
 
+function displayWelcomeMessage() {
+    const welcomeArt = `
+██╗    ██╗███████╗██████╗  ██████╗ ███████╗
+██║    ██║██╔════╝██╔══██╗██╔═══██╗██╔════╝
+██║ █╗ ██║█████╗  ██████╔╝██║   ██║███████╗
+██║███╗██║██╔══╝  ██╔══██╗██║   ██║╚════██║
+╚███╔███╔╝███████╗██████╔╝╚██████╔╝███████║
+ ╚══╝╚══╝ ╚══════╝╚═════╝  ╚═════╝ ╚══════╝
+    `;
+    const welcomeMessage = `\nWelcome to WebOS 2.0. Type 'help' for a list of available commands.`;
+    
+    syscall('terminal.write', { message: welcomeArt });
+    syscall('terminal.write', { message: welcomeMessage });
+}
 // Funcție ajutătoare pentru a rezolva căile relative
 function resolvePath(basePath, newPath) {
     if (newPath.startsWith('/')) {
@@ -41,6 +55,7 @@ export const shell = {
 
         logger.info('Shell: Initialized.');
         updatePrompt();
+        displayWelcomeMessage(); 
     }
 };
 
@@ -114,6 +129,23 @@ async function handleInput({ value }) {
 
         if (commandName === 'clear') {
             syscall('terminal.clear');
+            updatePrompt();
+            return;
+        }
+
+        if (commandName === 'history') {
+            // Formatăm istoricul comenzilor într-un singur string, cu fiecare comandă pe un rând nou
+            const formattedHistory = commandHistory
+                .map((cmd, index) => {
+                    // Adăugăm numărul liniei, aliniat la dreapta pentru un aspect curat
+                    const lineNumber = (index + 1).toString().padStart(4, ' ');
+                    return `${lineNumber}  ${cmd}`;
+                })
+                .join('\n');
+
+            // Afișăm istoricul formatat
+            syscall('terminal.write', { message: formattedHistory });
+            
             updatePrompt();
             return;
         }

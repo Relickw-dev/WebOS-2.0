@@ -32,6 +32,26 @@ export const syscalls = {
         return new Promise((resolve, reject) => {
             eventBus.emit('vfs.rm', { ...params, resolve, reject });
         });
+    },
+    'vfs.copyFile': (params) => {
+        return new Promise((resolve, reject) => {
+            eventBus.emit('vfs.copyFile', { ...params, resolve, reject });
+        });
+    },
+    'vfs.move': (params) => {
+        return new Promise((resolve, reject) => {
+            eventBus.emit('vfs.move', { ...params, resolve, reject });
+        });
+    },
+    'vfs.readFile': (params) => {
+        return new Promise((resolve, reject) => {
+            eventBus.emit('vfs.readFile', { ...params, resolve, reject });
+        });
+    },
+    'vfs.grep': (params) => {
+        return new Promise((resolve, reject) => {
+            eventBus.emit('vfs.grep', { ...params, resolve, reject });
+        });
     }
     // Adaugă aici alte apeluri de sistem
 };

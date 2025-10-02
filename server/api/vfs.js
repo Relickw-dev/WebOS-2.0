@@ -61,14 +61,25 @@ router.get('/stat', async (req, res) => {
 
 // GET /api/vfs/read
 router.get('/read', async (req, res) => {
-  const targetPath = req.query.path;
-  try {
-    const fullPath = getFullPath(targetPath);
-    const content = await fs.readFile(fullPath, 'utf8');
-    res.send(content);
-  } catch (err) {
-    res.status(404).json({ error: 'No such file or directory' });
-  }
+  const targetPath = req.query.path;
+  try {
+    if (!targetPath) {
+        return res.status(400).json({ error: 'Path is required' });
+    }
+    const fullPath = getFullPath(targetPath);
+    const content = await fs.readFile(fullPath, 'utf8');
+    // Important: Trimitem conținutul ca text, nu ca JSON
+    res.send(content); 
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+        res.status(404).json({ error: `cat: ${targetPath}: No such file or directory` });
+    } else if (err.code === 'EISDIR') {
+        res.status(400).json({ error: `cat: ${targetPath}: Is a directory` });
+    }
+    else {
+        res.status(500).json({ error: err.message });
+    }
+  }
 });
 
 // POST /api/vfs/write
@@ -158,5 +169,110 @@ router.delete('/rm', async (req, res) => {
   }
 });
 
+// POST /api/vfs/copy
+router.post('/copy', async (req, res) => {
+  const { source, destination, recursive } = req.body;
+
+  try {
+    if (!source || !destination) {
+      return res.status(400).json({ error: 'Source and destination are required' });
+    }
+
+    const sourcePath = getFullPath(source);
+    const destinationPath = getFullPath(destination);
+
+    // Verificăm dacă sursa există
+    try {
+      await fs.access(sourcePath);
+    } catch (e) {
+      return res.status(404).json({ error: `cp: cannot stat '${source}': No such file or directory` });
+    }
+
+    // Utilizăm fs.cp, care gestionează recursivitatea automat
+    await fs.cp(sourcePath, destinationPath, { recursive: !!recursive });
+    res.json({ success: true });
+
+  } catch (err) {
+    // fs.cp aruncă eroare dacă sursa e director și recursive e false
+    if (err.code === 'ERR_FS_CP_DIR_TO_NON_DIR' || (err.code === 'EISDIR' && !recursive)) {
+      res.status(400).json({ error: `cp: -r not specified; omitting directory '${source}'` });
+    } else {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
+
+router.post('/move', async (req, res) => {
+  const { source, destination } = req.body;
+
+  try {
+    if (!source || !destination) {
+      return res.status(400).json({ error: 'Source and destination are required' });
+    }
+
+    const sourcePath = getFullPath(source);
+    let destinationPath = getFullPath(destination);
+
+    // Verificăm dacă sursa există
+    try {
+      await fs.access(sourcePath);
+    } catch (e) {
+      return res.status(404).json({ error: `mv: cannot stat '${source}': No such file or directory` });
+    }
+
+    // Verificăm dacă destinația este un director existent
+    try {
+      const destStats = await fs.stat(destinationPath);
+      if (destStats.isDirectory()) {
+        // Dacă da, construim calea finală pentru a muta sursa *înăuntrul* directorului
+        destinationPath = path.join(destinationPath, path.basename(sourcePath));
+      }
+    } catch (e) {
+      // Ignorăm eroarea dacă destinația nu există (înseamnă că este o redenumire)
+    }
+
+    // Folosim fs.rename, care este eficient atât pentru fișiere, cât și pentru directoare
+    await fs.rename(sourcePath, destinationPath);
+    res.json({ success: true });
+
+  } catch (err) {
+    // Gestionăm erori specifice, cum ar fi mutarea unui director într-un fișier
+    if (err.code === 'ENOTDIR') {
+        res.status(400).json({ error: `mv: cannot move '${source}' to a non-directory` });
+    } else if (err.code === 'EPERM' || err.code === 'EXDEV') {
+        res.status(500).json({ error: `mv: cannot move '${source}' across devices or partitions (not supported)` });
+    }
+    else {
+        res.status(500).json({ error: err.message });
+    }
+  }
+});
+
+router.post('/grep', async (req, res) => {
+    const { path: targetPath, pattern } = req.body;
+
+    try {
+        if (!targetPath || pattern === undefined) {
+            return res.status(400).json({ error: 'Path and pattern are required' });
+        }
+        
+        const fullPath = getFullPath(targetPath);
+        const content = await fs.readFile(fullPath, 'utf8');
+        const lines = content.split(/\r?\n/);
+
+        const matchingLines = lines.filter(line => line.includes(pattern));
+
+        res.json(matchingLines); // Returnăm un array de linii care se potrivesc
+
+    } catch (err) {
+        if (err.code === 'ENOENT') {
+            res.status(404).json({ error: `grep: ${targetPath}: No such file or directory` });
+        } else if (err.code === 'EISDIR') {
+            res.status(400).json({ error: `grep: ${targetPath}: Is a directory` });
+        } else {
+            res.status(500).json({ error: err.message });
+        }
+    }
+});
 
 module.exports = router;

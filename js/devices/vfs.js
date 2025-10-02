@@ -34,6 +34,18 @@ const vfs = {
             vfsClient.rm(params.path, params.recursive).then(params.resolve).catch(params.reject);
         });
 
+        eventBus.on('vfs.copyFile', (params) => {
+            vfsClient.copyFile(params.source, params.destination, params.recursive).then(params.resolve).catch(params.reject);
+        });
+
+        eventBus.on('vfs.move', (params) => {
+            vfsClient.move(params.source, params.destination).then(params.resolve).catch(params.reject);
+        });
+        
+        eventBus.on('vfs.grep', (params) => {
+            vfsClient.grep(params.path, params.pattern).then(params.resolve).catch(params.reject);
+        });
+
         logger.info('VFS Driver: Initialized.');
     }
 };
