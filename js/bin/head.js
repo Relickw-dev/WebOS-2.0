@@ -33,7 +33,7 @@ export const logic = async ({ args, onOutput, cwd, stdin }) => {
                 lineCount = parseInt(rawLineCountArg, 10);
                 i++; // Am consumat următorul argument, deci îl sărim.
             } else {
-                onOutput({ type: 'error', message: 'head: opțiunea necesită un argument -- n' });
+                onOutput({ type: 'error', message: 'head: option requires an -- n argument' });
                 return 1;
             }
         } else {
@@ -48,7 +48,7 @@ export const logic = async ({ args, onOutput, cwd, stdin }) => {
     
     // Validăm dacă numărul de linii este un număr valid.
     if (isNaN(lineCount) || lineCount < 0) {
-        onOutput({ type: 'error', message: `head: număr invalid de linii: ‘${rawLineCountArg}’` });
+        onOutput({ type: 'error', message: `head: invalid line count: ‘${rawLineCountArg}’` });
         return 1;
     }
 
@@ -62,7 +62,7 @@ export const logic = async ({ args, onOutput, cwd, stdin }) => {
             content = await syscall('vfs.readFile', { path: fullPath });
         } else {
             // Dacă nu avem nici `stdin`, nici cale de fișier, afișăm eroare.
-            onOutput({ type: 'error', message: 'head: lipsește un fișier sau input prin pipe' });
+            onOutput({ type: 'error', message: 'head: missing file or input from pipe' });
             return 1;
         }
 
