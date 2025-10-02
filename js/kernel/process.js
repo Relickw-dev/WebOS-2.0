@@ -54,7 +54,11 @@ export const processManager = {
                     });
                 }
                 
-                inputData = outputBuffer.trim();
+                if (outputBuffer.endsWith('\n')) {
+                    inputData = outputBuffer.slice(0, -1);
+                } else {
+                    inputData = outputBuffer;
+                }
 
                 process.status = 'exited';
                 if (isLastCommand) {
