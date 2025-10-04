@@ -52,6 +52,19 @@ export const syscalls = {
         return new Promise((resolve, reject) => {
             eventBus.emit('vfs.grep', { ...params, resolve, reject });
         });
+    },
+    'proc.list': () => {
+        return new Promise((resolve, reject) => {
+            eventBus.emit('proc.list', { resolve, reject });
+        });
+    },
+    'proc.sleep': async ({ ms }) => {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    },
+    'proc.kill': (params) => {
+        return new Promise((resolve, reject) => {
+            eventBus.emit('proc.kill', { ...params, resolve, reject });
+        });
     }
     // Adaugă aici alte apeluri de sistem
 };

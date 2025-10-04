@@ -13,5 +13,8 @@
         "server/node_modules",
         "server/package-lock.json",
         "server/package.json"
+    ],
+    "liveServer.settings.ignoreFiles": [
+        "**/fs_root/**"
     ]
 }

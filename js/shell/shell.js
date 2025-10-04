@@ -9,15 +9,8 @@ let historyIndex = 0;
 
 // ... (funcțiile displayWelcomeMessage și resolvePath rămân neschimbate) ...
 function displayWelcomeMessage() {
-    const welcomeArt = `
-██╗    ██╗███████╗██████╗  ██████╗ ███████╗
-██║    ██║██╔════╝██╔══██╗██╔═══██╗██╔════╝
-██║ █╗ ██║█████╗  ██████╔╝██║   ██║███████╗
-██║███╗██║██╔══╝  ██╔══██╗██║   ██║╚════██║
-╚███╔███╔╝███████╗██████╔╝╚██████╔╝███████║
- ╚══╝╚══╝ ╚══════╝╚═════╝  ╚═════╝ ╚══════╝
-    `;
-    const welcomeMessage = `\nWelcome to WebOS 2.0. Type 'help' for a list of available commands.`;
+    const welcomeArt = ``;
+    const welcomeMessage = `Welcome to WebOS 2.0. Type 'help' for a list of available commands.`;
     
     syscall('terminal.write', { message: welcomeArt });
     syscall('terminal.write', { message: welcomeMessage });

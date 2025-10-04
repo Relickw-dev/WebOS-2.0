@@ -160,7 +160,9 @@ export const processManager = {
         try {
             const firstProcInfo = pipeline[0];
             const module = await import(`/js/bin/${firstProcInfo.name}.js`);
-            if (typeof module.logic !== 'function' || module.logic.constructor.name !== 'GeneratorFunction') {
+            // --- MODIFICARE AICI ---
+            const constructorName = module.logic.constructor.name;
+            if (typeof module.logic !== 'function' || (constructorName !== 'GeneratorFunction' && constructorName !== 'AsyncGeneratorFunction')) {
                 throw new Error(`Command '${firstProcInfo.name}' logic is not a valid generator function.`);
             }
             firstProcInfo.logic = module.logic;
@@ -187,3 +189,41 @@ export const processManager = {
 
     listProcesses: () => Array.from(processList.values()),
 };
+
+eventBus.on('proc.list', ({ resolve }) => {
+    // Trimite o copie a listei de procese pentru a preveni modificări externe
+    resolve(Array.from(processList.values()));
+});
+
+eventBus.on('proc.kill', ({ pid, resolve, reject }) => {
+    const pidToKill = parseInt(pid, 10);
+    if (isNaN(pidToKill)) {
+        return reject(new Error('kill: Invalid PID.'));
+    }
+
+    const processToKill = processList.get(pidToKill);
+
+    if (!processToKill) {
+        return reject(new Error(`kill: Process with PID ${pidToKill} not found.`));
+    }
+
+    // Set the status to TERMINATED
+    processToKill.status = 'TERMINATED';
+
+    // Remove it from the global process list
+    processList.delete(pidToKill);
+
+    // Find and remove the process from the ready queue, if it exists.
+    const indexInQueue = readyQueue.findIndex(p => p.pid === pidToKill);
+    if (indexInQueue > -1) {
+        readyQueue.splice(indexInQueue, 1);
+    }
+
+    // Notify the shell that the process has terminated (with a non-zero exit code)
+    if (processToKill.onExit) {
+        processToKill.onExit(1);
+    }
+    
+    // Resolve the syscall's promise
+    resolve();
+});
