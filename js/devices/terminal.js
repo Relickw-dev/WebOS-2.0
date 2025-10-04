@@ -7,8 +7,9 @@ const terminal = {
         const output = document.getElementById('terminal-output');
         const input = document.getElementById('terminal-input');
         const promptSpan = document.getElementById('prompt');
+        const themeLink = document.getElementById('theme-link'); // NOU
 
-        if (!output || !input || !promptSpan) {
+        if (!output || !input || !promptSpan || !themeLink) { // MODIFICARE
             logger.error('Terminal elements not found.');
             return;
         }
@@ -36,6 +37,12 @@ const terminal = {
             input.value = value;
             input.focus();
             input.setSelectionRange(value.length, value.length);
+        });
+
+        // NOU: Listener pentru schimbarea temei
+        eventBus.on('terminal.set_theme', ({ path }) => {
+            themeLink.href = path;
+            logger.info(`Terminal theme changed to ${path}`);
         });
 
         // Listener `keydown` actualizat pentru a gestiona mai multe taste

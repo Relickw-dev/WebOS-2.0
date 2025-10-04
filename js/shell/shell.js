@@ -175,6 +175,7 @@ async function handleInput({ value }) {
             return;
         }
 
+
         // --- Blocul "if (commandName === 'history')" a fost ȘTERS de aici ---
 
         const pipeline = parsePipeline(commandString);
