@@ -3,6 +3,7 @@ import { eventBus } from '../eventBus.js';
 import { logger } from '../utils/logger.js';
 
 const terminal = {
+
     init: () => {
         const output = document.getElementById('terminal-output');
         const input = document.getElementById('terminal-input');
@@ -62,6 +63,6 @@ const terminal = {
         });
         logger.info('Terminal Driver: Initialized.');
     }
-};
+}
 
 export default terminal;

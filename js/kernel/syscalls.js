@@ -65,7 +65,7 @@ export const syscalls = {
         return new Promise((resolve, reject) => {
             eventBus.emit('proc.kill', { ...params, resolve, reject });
         });
-    }
+    },
     // Adaugă aici alte apeluri de sistem
 };
 
