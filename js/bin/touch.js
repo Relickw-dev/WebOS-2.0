@@ -1,34 +1,42 @@
 // File: js/bin/touch.js
-import { syscall } from '../kernel/syscalls.js';
 
 /**
  * Logica principală pentru comanda touch.
- * Creează unul sau mai multe fișiere goale.
+ * Creează unul sau mai multe fișiere goale folosind sistemul de procese preemtiv.
  */
-export const logic = async ({ args, onOutput, cwd }) => {
+export function* logic({ args, cwd }) {
     const paths = args.filter(arg => !arg.startsWith('-'));
 
     if (paths.length === 0) {
-        onOutput({ type: 'error', message: 'touch: missing file operand' });
-        return;
+        // Înlocuim onOutput cu 'yield' pentru a trimite un mesaj de eroare.
+        yield { 
+            type: 'stdout', 
+            data: { type: 'error', message: 'touch: missing file operand' } 
+        };
+        return; // Oprim execuția generatorului.
     }
 
     for (const path of paths) {
         try {
+            // Logica de construire a căii rămâne aceeași.
             const absolutePath = path.startsWith('/') 
                 ? path 
                 : [cwd, path].join('/').replace(/\/+/g, '/');
             
-            const syscallArgs = { path: absolutePath, content: '', append: false };
-
-            // --- ADAUGĂ ACEST BLOC PENTRU DEPANARE ---
-            console.log('Calling syscall vfs.writeFile with:', syscallArgs);
-            // Verifică în consolă dacă 'content' este prezent aici ca string gol.
-
-            await syscall('vfs.writeFile', syscallArgs);
+            // Înlocuim 'await syscall(...)' cu 'yield' pentru a cere un syscall.
+            // Nu avem nevoie de rezultat, deci nu asignăm rezultatul lui yield la o variabilă.
+            yield {
+                type: 'syscall',
+                name: 'vfs.writeFile',
+                params: { path: absolutePath, content: '', append: false }
+            };
 
         } catch (e) {
-            onOutput({ type: 'error', message: e.message || `touch: cannot touch ‘${path}’: No such file or directory` });
+            // Trimitem eroarea prin 'yield'.
+            yield { 
+                type: 'stdout', 
+                data: { type: 'error', message: e.message || `touch: cannot touch ‘${path}’: No such file or directory` } 
+            };
         }
     }
-};
+}

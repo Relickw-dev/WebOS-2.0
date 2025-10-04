@@ -1,39 +1,56 @@
 // File: js/bin/cat.js
-import { syscall } from '../kernel/syscalls.js';
 
-/**
- * Logica principală pentru comanda cat.
- * Afișează conținutul unuia sau mai multor fișiere.
- */
-export const logic = async ({ args, onOutput, cwd }) => {
-    const paths = args.filter(arg => !arg.startsWith('-'));
+export function* logic({ args, cwd, stdin }) {
+    // Funcție internă pentru a procesa și trimite un bloc de text linie cu linie
+    function* processAndYield(content) {
+        if (typeof content !== 'string') return;
+        
+        const lines = content.split('\n');
 
-    if (paths.length === 0) {
-        onOutput({ type: 'error', message: 'cat: missing file operand' });
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            
+            // Ignorăm ultima linie dacă este goală (rezultată dintr-un `\n` la finalul fișierului)
+            if (i === lines.length - 1 && line === '') {
+                continue;
+            }
+
+            yield {
+                type: 'stdout',
+                data: { type: 'string', message: line }
+            };
+        }
+    }
+
+    // Cazul 1: Se primește input prin pipe (stdin)
+    if (stdin && args.length === 0) {
+        yield* processAndYield(stdin);
         return;
     }
 
-    for (const path of paths) {
-        try {
-            const absolutePath = path.startsWith('/') 
-                ? path 
-                : [cwd, path].join('/').replace(/\/+/g, '/');
-            
-            const content = await syscall('vfs.readFile', { path: absolutePath });
-            
-            // --- CORECȚIA ESTE AICI ---
-            // 1. Împărțim conținutul fișierului într-un array de linii.
-            //    Folosim o expresie regulată pentru a gestiona atât \n (Linux/macOS) cât și \r\n (Windows).
-            const lines = content.split(/\r?\n/);
-            
-            // 2. Iterăm prin fiecare linie și o trimitem individual către terminal.
-            //    Acest lucru asigură că fiecare linie este afișată corect.
-            for (const line of lines) {
-                onOutput({ message: line });
-            }
+    // Cazul 2: Nu există nici fișiere, nici stdin
+    if (args.length === 0) {
+        yield { 
+            type: 'stdout', 
+            data: { type: 'error', message: 'cat: missing file operand' } 
+        };
+        return;
+    }
 
+    // Cazul 3: Se citesc unul sau mai multe fișiere
+    for (const path of args) {
+        try {
+            const content = yield {
+                type: 'syscall',
+                name: 'vfs.readFile',
+                params: { path, cwd }
+            };
+            yield* processAndYield(content);
         } catch (e) {
-            onOutput({ type: 'error', message: e.message || `cat: ‘${path}’: No such file or directory` });
+            yield { 
+                type: 'stdout', 
+                data: { type: 'error', message: `cat: ${path}: ${e.message}` } 
+            };
         }
     }
-};
+}

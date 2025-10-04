@@ -1,13 +1,18 @@
 // File: js/bin/history.js
-import { syscall } from '../kernel/syscalls.js';
 
-export const logic = async ({ onOutput }) => {
+/**
+ * Logica principală pentru comanda history, adaptată ca generator.
+ */
+export function* logic() {
     try {
-        // 1. Apelăm un nou syscall pentru a cere shell-ului lista de comenzi.
-        const commandHistory = await syscall('shell.get_history');
+        // 1. Apelăm syscall-ul pentru a cere istoricul, folosind 'yield'.
+        const commandHistory = yield {
+            type: 'syscall',
+            name: 'shell.get_history'
+        };
 
         if (commandHistory && commandHistory.length > 0) {
-            // 2. Formatăm fiecare comandă cu numărul liniei.
+            // 2. Logica de formatare rămâne neschimbată.
             const formattedHistory = commandHistory
                 .map((cmd, index) => {
                     const lineNumber = (index + 1).toString().padStart(4, ' ');
@@ -15,13 +20,17 @@ export const logic = async ({ onOutput }) => {
                 })
                 .join('\n');
 
-            // 3. Trimitem tot istoricul formatat ca un singur output.
-            // Acest lucru îl face compatibil cu pipe-ul către `grep`.
-            onOutput({ message: formattedHistory });
+            // 3. Trimitem istoricul formatat ca un singur output, folosind 'yield'.
+            yield { 
+                type: 'stdout', 
+                data: { message: formattedHistory }
+            };
         }
-        return 0; // Succes
     } catch (e) {
-        onOutput({ type: 'error', message: `history: ${e.message}` });
-        return 1; // Eroare
+        // Trimitem eroarea prin 'yield'.
+        yield { 
+            type: 'stdout', 
+            data: { type: 'error', message: `history: ${e.message}` } 
+        };
     }
-};
+}

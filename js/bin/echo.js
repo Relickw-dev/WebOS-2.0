@@ -1,15 +1,17 @@
 // File: js/bin/echo.js
-import { syscall } from '../kernel/syscalls.js';
 
-/**
- * Logica principală pentru comanda echo.
- * Afișează argumentele primite direct în terminal.
- * @param {object} params Parametrii de execuție, inclusiv args și onOutput.
- */
-export const logic = async ({ args, onOutput }) => {
-    // Îmbină toate argumentele într-un singur șir
-    const message = args.join(' ');
+// Logica este acum o funcție generator.
+export function* logic({ args, onOutput }) {
+    const output = args.join(' ');
     
-    // Trimite mesajul către terminal folosind apelul de sistem
-    onOutput({ message });
-};
+    // În loc de a apela onOutput, facem 'yield' cu un obiect de output.
+    yield {
+        type: 'stdout',
+        data: {
+            type: 'string',
+            message: output
+        }
+    };
+    
+    // Generatorul se termină implicit aici.
+}

@@ -1,53 +1,83 @@
 // File: js/bin/ls.js
-import { syscall } from '../kernel/syscalls.js';
 
 /**
- * Listează conținutul unui director în mod recursiv.
+ * Listează conținutul unui director în mod recursiv, ca o funcție generator.
  * @param {string} path Calea directorului de listat.
  * @param {number} depth Nivelul de adâncime pentru indentare.
- * @param {function} onOutput Funcția de callback pentru a trimite ieșirea către terminal.
  */
-async function listDirectoryRecursive(path, depth, onOutput) {
+function* listDirectoryRecursive(path, depth) {
     const prefix = '  '.repeat(depth);
     try {
-        const entries = await syscall('vfs.readDir', { path });
+        // Cere un syscall pentru a citi directorul.
+        const entries = yield {
+            type: 'syscall',
+            name: 'vfs.readDir',
+            params: { path }
+        };
         
         for (const entry of entries) {
             const entryPath = path === '/' ? `/${entry.name}` : `${path}/${entry.name}`;
-            onOutput({ message: `${prefix}- ${entry.name} (${entry.type})` });
+            
+            // Trimite output-ul pentru intrarea curentă.
+            yield { 
+                type: 'stdout', 
+                data: { message: `${prefix}- ${entry.name} (${entry.type})` }
+            };
 
-            // Corecția: se verifică 'dir' în loc de 'directory'
             if (entry.type === 'dir') {
-                // Apel recursiv pentru subdirectoare
-                await listDirectoryRecursive(entryPath, depth + 1, onOutput);
+                // Deleagă execuția către apelul recursiv folosind yield*.
+                yield* listDirectoryRecursive(entryPath, depth + 1);
             }
         }
     } catch (e) {
-        onOutput({ type: 'error', message: `ls: cannot access '${path}': No such file or directory` });
+        // Trimite eroarea.
+        yield {
+            type: 'stdout',
+            data: { type: 'error', message: `ls: cannot access '${path}': No such file or directory` }
+        };
     }
 }
 
 /**
- * Funcția principală de logică pentru comanda ls.
- * @param {object} params Parametrii de execuție, inclusiv args, onOutput și cwd.
+ * Funcția principală de logică pentru comanda ls, adaptată ca generator.
  */
-export const logic = async ({ args, onOutput, cwd }) => {
+export function* logic({ args, cwd }) {
     const pathArgs = args.filter(arg => !arg.startsWith('-'));
     const path = pathArgs.length > 0 ? pathArgs[0] : cwd;
     const recursive = args.includes('-r');
     
     if (recursive) {
-        onOutput({ message: `Listing directory tree for: ${path}` });
-        await listDirectoryRecursive(path, 0, onOutput);
+        yield { 
+            type: 'stdout', 
+            data: { message: `Listing directory tree for: ${path}` } 
+        };
+        // Deleagă întreaga listare recursivă către funcția ajutătoare.
+        yield* listDirectoryRecursive(path, 0);
     } else {
         try {
-            const entries = await syscall('vfs.readDir', { path });
-            onOutput({ message: `Contents of ${path}:` });
-            entries.forEach(entry => {
-                onOutput({ message: `- ${entry.name} (${entry.type})` });
-            });
+            // Cere un syscall pentru a citi directorul.
+            const entries = yield {
+                type: 'syscall',
+                name: 'vfs.readDir',
+                params: { path }
+            };
+
+            yield { 
+                type: 'stdout', 
+                data: { message: `Contents of ${path}:` } 
+            };
+
+            for (const entry of entries) {
+                yield { 
+                    type: 'stdout', 
+                    data: { message: `- ${entry.name} (${entry.type})` } 
+                };
+            }
         } catch (e) {
-            onOutput({ type: 'error', message: `ls: cannot access '${path}': No such file or directory` });
+            yield { 
+                type: 'stdout', 
+                data: { type: 'error', message: `ls: cannot access '${path}': No such file or directory` } 
+            };
         }
     }
-};
+}

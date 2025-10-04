@@ -1,11 +1,11 @@
 // File: js/bin/cp.js
-import { syscall } from '../kernel/syscalls.js';
 
 /**
  * Logica principală pentru comanda cp.
  * Copiază un fișier sau un director (cu -r) către o destinație.
+ * Adaptată pentru sistemul de procese preemtiv.
  */
-export const logic = async ({ args, onOutput, cwd }) => {
+export function* logic({ args, cwd }) {
     // Detectăm flag-ul de recursivitate
     const isRecursive = args.includes('-r') || args.includes('-rf');
 
@@ -13,13 +13,20 @@ export const logic = async ({ args, onOutput, cwd }) => {
     const paths = args.filter(arg => !arg.startsWith('-'));
 
     if (paths.length < 2) {
-        onOutput({ type: 'error', message: 'cp: missing destination file operand' });
+        // Înlocuim onOutput cu 'yield'
+        yield { 
+            type: 'stdout', 
+            data: { type: 'error', message: 'cp: missing destination file operand' } 
+        };
         return;
     }
 
-    // Momentan, gestionăm doar 'cp sursa destinatie'. Nu 'cp sursa1 sursa2... director'
     if (paths.length > 2) {
-        onOutput({ type: 'error', message: `cp: target '${paths[paths.length - 1]}' is not a directory` });
+        // Înlocuim onOutput cu 'yield'
+        yield { 
+            type: 'stdout', 
+            data: { type: 'error', message: `cp: target '${paths[paths.length - 1]}' is not a directory` } 
+        };
         return;
     }
 
@@ -34,14 +41,22 @@ export const logic = async ({ args, onOutput, cwd }) => {
             ? destination
             : [cwd, destination].join('/').replace(/\/+/g, '/');
 
-        // Trimitem flag-ul 'isRecursive' prin apelul de sistem
-        await syscall('vfs.copyFile', { 
-            source: sourcePath, 
-            destination: destinationPath,
-            recursive: isRecursive 
-        });
+        // Înlocuim 'await syscall(...)' cu 'yield' pentru a cere un syscall
+        yield {
+            type: 'syscall',
+            name: 'vfs.copyFile',
+            params: { 
+                source: sourcePath, 
+                destination: destinationPath,
+                recursive: isRecursive 
+            }
+        };
 
     } catch (e) {
-        onOutput({ type: 'error', message: e.message || `cp: cannot copy` });
+        // Înlocuim onOutput cu 'yield'
+        yield { 
+            type: 'stdout', 
+            data: { type: 'error', message: e.message || `cp: cannot copy` } 
+        };
     }
-};
+}

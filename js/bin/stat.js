@@ -1,38 +1,59 @@
 // File: js/bin/stat.js
-import { syscall } from '../kernel/syscalls.js';
 
 /**
  * Logica principală pentru comanda stat.
- * Afișează informații detaliate despre un fișier sau director.
+ * Afișează informații detaliate despre unul sau mai multe fișiere/directoare.
+ * Adaptată pentru noul sistem de procese și îmbunătățită pentru robustețe.
  */
-export const logic = async ({ args, onOutput, cwd }) => {
+export function* logic({ args, cwd }) {
     const paths = args.filter(arg => !arg.startsWith('-'));
 
     if (paths.length === 0) {
-        onOutput({ type: 'error', message: 'stat: missing operand' });
+        yield { 
+            type: 'stdout', 
+            data: { type: 'error', message: 'stat: missing operand' } 
+        };
         return;
     }
 
-    const path = paths[0];
+    // Iterează prin fiecare cale furnizată ca argument.
+    for (const path of paths) {
+        try {
+            const absolutePath = path.startsWith('/') 
+                ? path 
+                : [cwd, path].join('/').replace(/\/+/g, '/');
+            
+            // Cere metadatele fișierului printr-un syscall.
+            const stats = yield {
+                type: 'syscall',
+                name: 'vfs.stat',
+                params: { path: absolutePath }
+            };
 
-    try {
-        const absolutePath = path.startsWith('/') 
-            ? path 
-            : [cwd, path].join('/').replace(/\/+/g, '/');
-        
-        // Apelăm syscall-ul existent pentru a obține metadatele
-        const stats = await syscall('vfs.stat', { path: absolutePath });
+            // Afișează un separator dacă procesăm mai multe fișiere.
+            if (paths.length > 1) {
+                yield { type: 'stdout', data: { message: '---' } };
+            }
 
-        // Formatăm răspunsul JSON într-un format lizibil pentru terminal
-        const output = `  File: ${path}
-  Size: ${stats.size} Bytes
-  Type: ${stats.type}
- Modify: ${new Date(stats.mtime).toLocaleString()}
- Change: ${new Date(stats.ctime).toLocaleString()}`;
-        
-        onOutput({ message: output });
+            // Trimitem fiecare linie de output separat pentru o formatare curată.
+            yield { type: 'stdout', data: { message: `  File: ${path}` } };
+            yield { type: 'stdout', data: { message: `  Size: ${stats.size} Bytes` } };
+            yield { type: 'stdout', data: { message: `  Type: ${stats.type}` } };
+            
+            // Verificăm dacă timestamp-urile există înainte de a le afișa
+            if (stats.mtime) {
+                yield { type: 'stdout', data: { message: `Modify: ${new Date(stats.mtime).toLocaleString()}` } };
+            }
+            if (stats.ctime) {
+                yield { type: 'stdout', data: { message: `Change: ${new Date(stats.ctime).toLocaleString()}` } };
+            }
 
-    } catch (e) {
-        onOutput({ type: 'error', message: e.message || `stat: cannot stat ‘${path}’: No such file or directory` });
+        } catch (e) {
+            // Dacă un fișier nu poate fi accesat, afișează eroarea și continuă cu următorul.
+            yield { 
+                type: 'stdout', 
+                data: { type: 'error', message: e.message || `stat: cannot stat ‘${path}’: No such file or directory` } 
+            };
+        }
     }
-};
+}

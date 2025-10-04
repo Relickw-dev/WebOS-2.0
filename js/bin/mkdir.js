@@ -1,27 +1,40 @@
 // File: js/bin/mkdir.js
-import { syscall } from '../kernel/syscalls.js';
 
 /**
- * Logica principală pentru comanda mkdir.
+ * Logica principală pentru comanda mkdir, adaptată pentru noul sistem de procese.
  */
-export const logic = async ({ args, onOutput, cwd }) => {
+export function* logic({ args, cwd }) {
     const paths = args.filter(arg => !arg.startsWith('-'));
 
     if (paths.length === 0) {
-        onOutput({ type: 'error', message: 'mkdir: missing operand' });
-        return;
+        // Înlocuim onOutput cu 'yield' pentru a trimite un mesaj de eroare.
+        yield { 
+            type: 'stdout', 
+            data: { type: 'error', message: 'mkdir: missing operand' } 
+        };
+        return; // Oprim execuția generatorului.
     }
 
     for (const path of paths) {
         try {
-            // Rezolvă calea relativă, asigurându-te că nu există slash-uri duplicate
+            // Logica de construire a căii rămâne aceeași.
             const absolutePath = path.startsWith('/') 
                 ? path 
                 : [cwd, path].join('/').replace(/\/+/g, '/');
             
-            await syscall('vfs.mkdir', { path: absolutePath });
+            // Înlocuim 'await syscall(...)' cu 'yield' pentru a cere un syscall.
+            yield {
+                type: 'syscall',
+                name: 'vfs.mkdir',
+                params: { path: absolutePath }
+            };
+
         } catch (e) {
-            onOutput({ type: 'error', message: e.message || `mkdir: cannot create directory ‘${path}’` });
+            // Trimitem eroarea prin 'yield'.
+            yield { 
+                type: 'stdout', 
+                data: { type: 'error', message: e.message || `mkdir: cannot create directory ‘${path}’` } 
+            };
         }
     }
-};
+}

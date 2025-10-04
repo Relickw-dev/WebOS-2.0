@@ -1,7 +1,6 @@
 // File: js/bin/grep.js
-import { syscall } from '../kernel/syscalls.js';
 
-// Funcție ajutătoare pentru a rezolva căile.
+// Funcția ajutătoare pentru a rezolva căile rămâne neschimbată.
 function resolvePath(basePath, newPath) {
     if (newPath.startsWith('/')) {
         return newPath;
@@ -18,20 +17,28 @@ function resolvePath(basePath, newPath) {
     return '/' + baseParts.join('/');
 }
 
-export const logic = async ({ args, onOutput, cwd, stdin }) => {
+/**
+ * Logica principală pentru comanda grep, adaptată ca generator.
+ */
+export function* logic({ args, cwd, stdin }) {
     if (args.length < 1) {
-        onOutput({ type: 'error', message: 'grep: Missing pattern' });
-        return 1;
+        yield { 
+            type: 'stdout', 
+            data: { type: 'error', message: 'grep: Missing pattern' } 
+        };
+        return;
     }
 
     const pattern = args[0];
     let regex;
     try {
-        // Am adăugat flag-ul 'g' (global) pentru a înlocui toate aparițiile pe o linie, nu doar prima.
         regex = new RegExp(pattern, 'gi'); 
     } catch (e) {
-        onOutput({ type: 'error', message: `grep: Invalid pattern: ${e.message}` });
-        return 1;
+        yield { 
+            type: 'stdout', 
+            data: { type: 'error', message: `grep: Invalid pattern: ${e.message}` } 
+        };
+        return;
     }
     
     let content = null;
@@ -42,30 +49,44 @@ export const logic = async ({ args, onOutput, cwd, stdin }) => {
         } else if (args.length > 1) {
             const filePath = args[1];
             const fullPath = resolvePath(cwd, filePath);
-            content = await syscall('vfs.readFile', { path: fullPath });
+            
+            // Înlocuim 'await syscall' cu 'yield'
+            content = yield {
+                type: 'syscall',
+                name: 'vfs.readFile',
+                params: { path: fullPath }
+            };
         } else {
-            onOutput({ type: 'error', message: 'grep: Missing file or piped input' });
-            return 1;
+            yield { 
+                type: 'stdout', 
+                data: { type: 'error', message: 'grep: Missing file or piped input' } 
+            };
+            return;
         }
 
         if (content) {
             const lines = content.split('\n');
-            lines.forEach(line => {
+            for (const line of lines) {
+                // Resetăm indexul regex-ului pentru fiecare linie
+                regex.lastIndex = 0; 
                 if (line && regex.test(line)) {
-                    // --- MODIFICARE CHEIE ---
-                    // Înlocuim textul care se potrivește cu același text, dar încapsulat
-                    // într-un span cu clasa 'grep-highlight'.
+                    // Resetăm din nou pentru a asigura că 'replace' funcționează corect
+                    regex.lastIndex = 0; 
                     const highlightedLine = line.replace(regex, (match) => `<span class="grep-highlight">${match}</span>`);
                     
-                    // Trimitem linia formatată ca HTML către terminal.
-                    onOutput({ message: highlightedLine, isHtml: true });
+                    // Înlocuim 'onOutput' cu 'yield'
+                    yield { 
+                        type: 'stdout', 
+                        data: { message: highlightedLine, isHtml: true } 
+                    };
                 }
-            });
+            }
         }
 
-        return 0; // Succes
     } catch (e) {
-        onOutput({ type: 'error', message: `grep: ${e.message}` });
-        return 1; // Eroare
+        yield { 
+            type: 'stdout', 
+            data: { type: 'error', message: `grep: ${e.message}` } 
+        };
     }
-};
+}

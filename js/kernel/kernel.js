@@ -8,13 +8,16 @@ export const kernel = {
     async init() {
         logger.info('Kernel: Initializing...');
         this.registerSyscalls();
-        eventBus.on('proc.exec', this.handleProcessExecution);
+        eventBus.on('proc.exec', this.handleProcessExecution); // handleProcessExecution este deja legat de 'this'
         logger.info('Kernel: Initialization complete.');
         eventBus.emit('kernel.boot_complete');
     },
 
     registerSyscalls() {
         for (const name in syscalls) {
+            // Syscall-urile sunt acum apelate direct din process.js, 
+            // dar păstrăm acest mecanism pentru eventuală compatibilitate inversă
+            // sau alte tipuri de evenimente.
             eventBus.on(`syscall.${name}`, async (params) => {
                 const { resolve, reject, ...rest } = params;
                 try {
@@ -27,7 +30,8 @@ export const kernel = {
         }
     },
     
-    handleProcessExecution(params) {
-        processManager.createAndRun(params);
+    // Funcția este acum asincronă pentru a se potrivi cu importurile dinamice
+    async handleProcessExecution(params) {
+        await processManager.createAndRun(params);
     }
 };

@@ -1,7 +1,6 @@
 // File: js/bin/head.js
-import { syscall } from '../kernel/syscalls.js';
 
-// Funcție ajutătoare pentru a rezolva căile relative (`.` și `..`).
+// Funcția ajutătoare pentru a rezolva căile rămâne neschimbată.
 function resolvePath(basePath, newPath) {
     if (newPath.startsWith('/')) {
         return newPath;
@@ -18,12 +17,14 @@ function resolvePath(basePath, newPath) {
     return '/' + baseParts.join('/');
 }
 
-export const logic = async ({ args, onOutput, cwd, stdin }) => {
+/**
+ * Logica principală pentru comanda head, adaptată ca generator.
+ */
+export function* logic({ args, cwd, stdin }) {
     let lineCount = 10;
     let filePath = null;
     let rawLineCountArg = '10';
 
-    // Parsare simplă a argumentelor pentru a găsi numărul de linii și calea fișierului.
     const remainingArgs = [];
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -31,13 +32,15 @@ export const logic = async ({ args, onOutput, cwd, stdin }) => {
             if (i + 1 < args.length) {
                 rawLineCountArg = args[i + 1];
                 lineCount = parseInt(rawLineCountArg, 10);
-                i++; // Am consumat următorul argument, deci îl sărim.
+                i++; 
             } else {
-                onOutput({ type: 'error', message: 'head: option requires an -- n argument' });
-                return 1;
+                yield { 
+                    type: 'stdout', 
+                    data: { type: 'error', message: 'head: option requires an -- n argument' } 
+                };
+                return;
             }
         } else {
-            // Orice nu este o opțiune este considerat o cale de fișier.
             remainingArgs.push(arg);
         }
     }
@@ -46,36 +49,50 @@ export const logic = async ({ args, onOutput, cwd, stdin }) => {
         filePath = remainingArgs[0];
     }
     
-    // Validăm dacă numărul de linii este un număr valid.
     if (isNaN(lineCount) || lineCount < 0) {
-        onOutput({ type: 'error', message: `head: invalid line count: ‘${rawLineCountArg}’` });
-        return 1;
+        yield { 
+            type: 'stdout', 
+            data: { type: 'error', message: `head: invalid line count: ‘${rawLineCountArg}’` } 
+        };
+        return;
     }
 
     let content = null;
     try {
-        // Logica de citire: prioritate are `stdin`, apoi fișierul.
         if (stdin !== null && stdin !== undefined) {
             content = stdin;
         } else if (filePath) {
             const fullPath = resolvePath(cwd, filePath);
-            content = await syscall('vfs.readFile', { path: fullPath });
+            // Înlocuim 'await syscall' cu 'yield'
+            content = yield {
+                type: 'syscall',
+                name: 'vfs.readFile',
+                params: { path: fullPath }
+            };
         } else {
-            // Dacă nu avem nici `stdin`, nici cale de fișier, afișăm eroare.
-            onOutput({ type: 'error', message: 'head: missing file or input from pipe' });
-            return 1;
+            yield { 
+                type: 'stdout', 
+                data: { type: 'error', message: 'head: missing file or input from pipe' } 
+            };
+            return;
         }
 
-        // Procesarea și afișarea rezultatului.
         if (content) {
             const lines = content.split('\n');
             const outputLines = lines.slice(0, lineCount);
-            onOutput({ message: outputLines.join('\n') });
+            
+            // Recomandare: trimitem fiecare linie separat pentru a evita probleme de formatare în terminal
+            for(const line of outputLines) {
+                 yield { 
+                    type: 'stdout', 
+                    data: { message: line } 
+                };
+            }
         }
-
-        return 0; // Succes
     } catch (e) {
-        onOutput({ type: 'error', message: `head: ${filePath}: ${e.message}` });
-        return 1; // Eroare
+        yield { 
+            type: 'stdout', 
+            data: { type: 'error', message: `head: ${filePath}: ${e.message}` } 
+        };
     }
-};
+}

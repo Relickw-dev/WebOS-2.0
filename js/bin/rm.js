@@ -1,11 +1,11 @@
 // File: js/bin/rm.js
-import { syscall } from '../kernel/syscalls.js';
 
 /**
  * Logica principală pentru comanda rm.
  * Șterge fișiere sau directoare (dacă este specificat -r).
+ * Adaptată pentru noul sistem de procese.
  */
-export const logic = async ({ args, onOutput, cwd }) => {
+export function* logic({ args, cwd }) {
     // Verificăm dacă există flag-ul pentru ștergere recursivă
     const isRecursive = args.includes('-r') || args.includes('-rf');
 
@@ -13,7 +13,11 @@ export const logic = async ({ args, onOutput, cwd }) => {
     const paths = args.filter(arg => !arg.startsWith('-'));
 
     if (paths.length === 0) {
-        onOutput({ type: 'error', message: 'rm: missing operand' });
+        // Înlocuim onOutput cu 'yield'
+        yield { 
+            type: 'stdout', 
+            data: { type: 'error', message: 'rm: missing operand' } 
+        };
         return;
     }
 
@@ -23,11 +27,19 @@ export const logic = async ({ args, onOutput, cwd }) => {
                 ? path 
                 : [cwd, path].join('/').replace(/\/+/g, '/');
             
-            // Apelăm noul syscall 'vfs.rm' cu parametrul 'recursive'
-            await syscall('vfs.rm', { path: absolutePath, recursive: isRecursive });
+            // Înlocuim 'await syscall(...)' cu 'yield' pentru a cere un syscall
+            yield {
+                type: 'syscall',
+                name: 'vfs.rm',
+                params: { path: absolutePath, recursive: isRecursive }
+            };
 
         } catch (e) {
-            onOutput({ type: 'error', message: e.message || `rm: cannot remove ‘${path}’` });
+            // Trimitem eroarea prin 'yield'
+            yield { 
+                type: 'stdout', 
+                data: { type: 'error', message: e.message || `rm: cannot remove ‘${path}’` } 
+            };
         }
     }
-};
+}

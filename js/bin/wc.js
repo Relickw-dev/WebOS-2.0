@@ -1,7 +1,6 @@
 // File: js/bin/wc.js
-import { syscall } from '../kernel/syscalls.js';
 
-// Funcție ajutătoare pentru a rezolva căile relative (`.` și `..`).
+// Funcția ajutătoare pentru a rezolva căile rămâne neschimbată.
 function resolvePath(basePath, newPath) {
     if (newPath.startsWith('/')) {
         return newPath;
@@ -18,13 +17,16 @@ function resolvePath(basePath, newPath) {
     return '/' + baseParts.join('/');
 }
 
-export const logic = async ({ args, onOutput, cwd, stdin }) => {
+/**
+ * Logica principală pentru comanda wc, adaptată ca generator.
+ */
+export function* logic({ args, cwd, stdin }) {
     let showLines = false;
     let showWords = false;
     let showChars = false;
     let filePath = null;
 
-    // 1. Parsarea argumentelor pentru a identifica flag-urile și fișierul.
+    // 1. Parsarea argumentelor (logica neschimbată).
     const fileArgs = [];
     for (const arg of args) {
         if (arg.startsWith('-')) {
@@ -53,37 +55,50 @@ export const logic = async ({ args, onOutput, cwd, stdin }) => {
             content = stdin;
         } else if (filePath) {
             const fullPath = resolvePath(cwd, filePath);
-            content = await syscall('vfs.readFile', { path: fullPath });
+            // Înlocuim 'await syscall' cu 'yield'.
+            content = yield {
+                type: 'syscall',
+                name: 'vfs.readFile',
+                params: { path: fullPath }
+            };
         } else {
-            onOutput({ type: 'error', message: 'wc: usage: wc [-lwc] [file]' });
-            return 1;
+            yield { 
+                type: 'stdout', 
+                data: { type: 'error', message: 'wc: usage: wc [-lwc] [file]' } 
+            };
+            return;
         }
 
-        // 3. Logica de numărare.
+        // Asigurăm că avem un string cu care să lucrăm.
+        content = content || '';
+
+        // 3. Logica de numărare (neschimbată).
         const lineCount = (content.match(/\n/g) || []).length;
         const wordCount = content.trim() === '' ? 0 : (content.trim().split(/\s+/).filter(w => w.length > 0)).length;
         const charCount = content.length;
 
-        // --- MODIFICARE CHEIE ---
-        // 4. Formatarea output-ului cu etichete descriptive.
+        // 4. Formatarea output-ului (logica neschimbată).
         let outputParts = [];
         if (showLines) outputParts.push(`Lines: ${lineCount}`);
         if (showWords) outputParts.push(`Words: ${wordCount}`);
         if (showChars) outputParts.push(`Characters: ${charCount}`);
 
-        // Unim părțile cu câteva spații pentru lizibilitate.
         let message = outputParts.join('   ');
 
         if (filePath) {
             message += `   (${filePath})`;
         }
         
-        onOutput({ message });
-        // --- SFÂRȘIT MODIFICARE ---
+        // Trimitem rezultatul final folosind 'yield'.
+        yield { 
+            type: 'stdout', 
+            data: { message } 
+        };
 
-        return 0; // Succes
     } catch (e) {
-        onOutput({ type: 'error', message: `wc: ${filePath || ''}: ${e.message}` });
-        return 1; // Eroare
+        yield { 
+            type: 'stdout', 
+            data: { type: 'error', message: `wc: ${filePath || ''}: ${e.message}` } 
+        };
     }
-};
+}

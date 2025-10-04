@@ -2,10 +2,13 @@
 
 /**
  * Logica principală pentru comanda pwd (print working directory).
- * Afișează directorul de lucru curent.
+ * Afișează directorul de lucru curent, adaptată pentru noul sistem de procese.
  */
-export const logic = async ({ onOutput, cwd }) => {
-    // Argumentul 'cwd' (current working directory) este deja furnizat de shell
-    // la executarea oricărei comenzi. Trebuie doar să îl afișăm.
-    onOutput({ message: cwd });
-};
+export function* logic({ cwd }) {
+    // Argumentul 'cwd' (current working directory) este furnizat de shell.
+    // Îl trimitem la output folosind 'yield'.
+    yield {
+        type: 'stdout',
+        data: { message: cwd }
+    };
+}
