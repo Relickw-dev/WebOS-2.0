@@ -66,6 +66,9 @@ export const syscalls = {
             eventBus.emit('proc.kill', { ...params, resolve, reject });
         });
     },
+    'terminal.set_theme': async ({ theme }) => {
+        eventBus.emit('terminal.set_theme', { theme });
+    },
     // Adaugă aici alte apeluri de sistem
 };
 

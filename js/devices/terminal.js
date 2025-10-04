@@ -36,6 +36,14 @@ const terminal = {
             input.focus();
             input.setSelectionRange(value.length, value.length);
         });
+        
+        eventBus.on('terminal.set_theme', ({ theme }) => {
+            if (theme === 'dark') {
+                document.body.classList.add('dark-theme');
+            } else if (theme === 'light') {
+                document.body.classList.remove('dark-theme');
+            }
+        });
 
         input.addEventListener('keydown', (e) => {
             switch (e.key) {

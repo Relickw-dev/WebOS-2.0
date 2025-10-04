@@ -15,7 +15,7 @@ export function* logic({ args }) {
         },
         'cp': {
             description: 'Copies files or directories.',
-            usage: 'cp [-r] <source> <destination>',
+            usage: 'cp [-r] [source] [destination]',
             example: 'cp /home/user/file.txt /home/user/file_backup.txt\ncp -r /home/user/docs /home/user/docs_backup'
         },
         'date': {
@@ -30,7 +30,7 @@ export function* logic({ args }) {
         },
         'grep': {
             description: 'Searches for a pattern in a file or input.',
-            usage: 'grep <pattern> [file]',
+            usage: 'grep [pattern] [file]',
             example: 'grep "error" /var/log/sys.log'
         },
         'head': {
@@ -45,7 +45,7 @@ export function* logic({ args }) {
         },
         'kill': {
             description: 'Stops a process based on its PID (Process ID).',
-            usage: 'kill <pid>',
+            usage: 'kill [pid]',
             example: 'kill 101'
         },
         'ls': {
@@ -55,12 +55,12 @@ export function* logic({ args }) {
         },
         'mkdir': {
             description: 'Creates one or more directories.',
-            usage: 'mkdir <directory1> [directory2] ...',
+            usage: 'mkdir [directory1] [directory2] ...',
             example: 'mkdir /home/user/new_folder'
         },
         'mv': {
             description: 'Moves or renames files and directories.',
-            usage: 'mv <source> <destination>',
+            usage: 'mv [source] [destination]',
             example: 'mv old_name.txt new_name.txt'
         },
         'ps': {
@@ -75,22 +75,22 @@ export function* logic({ args }) {
         },
         'rm': {
             description: 'Deletes files or directories.',
-            usage: 'rm [-r] <file/directory> ...',
+            usage: 'rm [-r] [file/directory] ...',
             example: 'rm temp.txt\nrm -r old_project'
         },
         'sleep': {
             description: 'Pauses execution for a specified number of seconds.',
-            usage: 'sleep <seconds>',
+            usage: 'sleep [seconds]',
             example: 'sleep 5'
         },
         'stat': {
             description: 'Displays detailed information about a file or directory.',
-            usage: 'stat <path>',
+            usage: 'stat [path]',
             example: 'stat /home/user/file.txt'
         },
         'touch': {
             description: 'Creates an empty file or updates the modification date.',
-            usage: 'touch <file1> [file2] ...',
+            usage: 'touch [file1] [file2] ...',
             example: 'touch new_file.txt'
         },
         'wc': {
@@ -102,7 +102,12 @@ export function* logic({ args }) {
             description: 'Displays this help message or details about a specific command.',
             usage: 'help [command]',
             example: 'help ls'
-        }
+        },
+        'theme': {
+        description: 'Changes the visual theme of the terminal.',
+        usage: 'theme [light|dark]',
+        example: 'theme dark'
+    },
     };
 
     // Case 1: `help [command]` - Display details for a single command
