@@ -105,7 +105,7 @@ export function* logic({ args }) {
         },
         'theme': {
         description: 'Changes the visual theme of the terminal.',
-        usage: 'theme [light|dark]',
+        usage: 'theme [light|true-dark|nord|dracula|solarized-light|neon-blade|matrix-green]',
         example: 'theme dark'
     },
     };

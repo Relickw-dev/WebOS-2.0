@@ -38,10 +38,27 @@ const terminal = {
         });
         
         eventBus.on('terminal.set_theme', ({ theme }) => {
-            if (theme === 'dark') {
-                document.body.classList.add('dark-theme');
-            } else if (theme === 'light') {
-                document.body.classList.remove('dark-theme');
+            const allThemeClasses = [
+            'nord-theme', 
+            'true-dark-theme',
+            'dracula-theme', 
+            'solarized-light-theme',
+            'neon-blade-theme',   
+            'matrix-green-theme'  
+        ];
+            document.body.classList.remove(...allThemeClasses);
+            if (theme === 'nord') {
+                document.body.classList.add('nord-theme');
+            } else if (theme === 'dracula') {
+                document.body.classList.add('dracula-theme');
+            } else if (theme === 'solarized-light') {
+                document.body.classList.add('solarized-light-theme');
+            } else if (theme === 'neon-blade') {
+                document.body.classList.add('neon-blade-theme');
+            } else if (theme === 'matrix-green') {
+                document.body.classList.add('matrix-green-theme');
+            } else if (theme === 'true-dark') {
+                document.body.classList.add('true-dark-theme');
             }
         });
 

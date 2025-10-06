@@ -10,7 +10,6 @@ export function* logic({ args, cwd, stdin }) {
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             
-            // Ignorăm ultima linie dacă este goală (rezultată dintr-un `\n` la finalul fișierului)
             if (i === lines.length - 1 && line === '') {
                 continue;
             }

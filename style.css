@@ -1,57 +1,190 @@
-/* --- File: style.css */
-
-/* --- Import Fontă și Variabile de Culoare --- */
+/* --- File: style.css (Final Corrected Version) --- */
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+/* ---==============================--- */
+/* ---     SISTEMUL DE TEME         --- */
+/* ---==============================--- */
 
 /* --- Tema Light (Default) --- */
 :root {
-    /* Paletă de culori deschisă și modernă */
     --background-color: #f0f4f8;
-    --terminal-bg: rgba(255, 255, 255, 0.5); 
+    --terminal-bg: rgba(255, 255, 255, 0.6); 
     --text-color: #2e3440;
     --prompt-color: #5e81ac;
-    --border-color: rgba(0, 0, 0, 0.1);
-    --header-bg: rgba(255, 255, 255, 0.8);
-
+    --border-color: rgba(0, 0, 0, 0.08);
+    --header-bg: rgba(255, 255, 255, 0.7);
     --caret-color: #2e3440;
-    --caret-shadow: rgba(46, 52, 64, 0.2);
-
-    --btn-color-close: #f07178;
-    --btn-color-maximize: #f7a269;
-    --btn-color-minimize: #c3e88d;
-
-    --scrollbar-thumb: #999999;
-    --scrollbar-track: #f0f0f0;
-
-    /* --- Variabile Logo Fundal --- */
+    --caret-shadow: rgba(46, 52, 64, 0.3);
+    --btn-color-close: #bf616a;
+    --btn-color-maximize: #ebcb8b;
+    --btn-color-minimize: #a3be8c;
+    --scrollbar-thumb: #c0c5ce;
+    --scrollbar-track: transparent;
     --logo-bg-image: url('./solus.png');
-    --logo-bg-opacity: 0.08;
+    --logo-bg-opacity: 0.05;
+    --text-glow: none;
 }
 
-/* --- Tema Dark (se activează cu clasa .dark-theme pe body) --- */
-body.dark-theme {
+/* --- Tema True Dark (OLED) --- */
+body.true-dark-theme {
+    --background-color: #000000; /* Negru-pur pentru contrast maxim */
+    --terminal-bg: rgba(0, 0, 0, 0.5); /* Sticlă fumurie peste fundalul negru */
+    --text-color: #e5e5e5; /* Alb-gri pentru lizibilitate fără a obosi ochii */
+    --prompt-color: #00aaff; /* Albastru modern ca accent */
+    --border-color: rgba(255, 255, 255, 0.1); /* O bordură fină, aproape invizibilă */
+    --header-bg: rgba(0, 0, 0, 0.7);
+    --caret-color: #e5e5e5;
+    --caret-shadow: rgba(229, 229, 229, 0.3);
+    --btn-color-close: #ff5555;
+    --btn-color-maximize: #f1fa8c;
+    --btn-color-minimize: #50fa7b;
+    --scrollbar-thumb: #333333;
+    --scrollbar-track: transparent;
+    --logo-bg-image: url('./solus-white.png');
+    --logo-bg-opacity: 0.05;
+    --text-glow: none; /* Fără glow pentru un text cât mai clar */
+}
+
+/* --- Tema Nord (Dark) --- */
+body.nord-theme {
     --background-color: #2e3440;
-    --terminal-bg: rgba(36, 41, 46, 0.5);
+    --terminal-bg: rgba(46, 52, 64, 0.5);
     --text-color: #d8dee9;
     --prompt-color: #88c0d0;
-    --border-color: rgba(67, 83, 102, 0.2);
-    --header-bg: rgba(36, 41, 46, 0.8);
-
-    --caret-color: #ffffff;
-    --caret-shadow: rgba(255, 255, 255, 0.3);
-
-    --scrollbar-thumb: #526372;
-    --scrollbar-track: #24292e;
-
-    /* --- Variabile Logo Fundal --- */
+    --border-color: rgba(216, 222, 233, 0.1);
+    --header-bg: rgba(46, 52, 64, 0.7);
+    --caret-color: #eceff4;
+    --caret-shadow: rgba(236, 239, 244, 0.3);
+    --scrollbar-thumb: #4c566a;
+    --scrollbar-track: transparent;
     --logo-bg-image: url('./solus-white.png');
-    --logo-bg-opacity: 0.08;
+    --logo-bg-opacity: 0.05;
+    --text-glow: none;
+}
+
+/* --- Tema Dracula --- */
+body.dracula-theme {
+    --background-color: #282a36;
+    --terminal-bg: rgba(40, 42, 54, 0.5);
+    --text-color: #f8f8f2;
+    --prompt-color: #bd93f9; /* Purple */
+    --border-color: rgba(248, 248, 242, 0.1);
+    --header-bg: rgba(40, 42, 54, 0.7);
+    --caret-color: #f8f8f2;
+    --caret-shadow: rgba(248, 248, 242, 0.3);
+    --btn-color-close: #ff5555; /* Red */
+    --btn-color-maximize: #f1fa8c; /* Yellow */
+    --btn-color-minimize: #50fa7b; /* Green */
+    --scrollbar-thumb: #6272a4;
+    --scrollbar-track: transparent;
+    --logo-bg-image: url('./solus-white.png');
+    --logo-bg-opacity: 0.05;
+    --text-glow: none;
+}
+
+/* --- Tema Solarized Light --- */
+body.solarized-light-theme {
+    --background-color: #fdf6e3;
+    --terminal-bg: rgba(238, 232, 213, 0.6);
+    --text-color: #657b83;
+    --prompt-color: #268bd2; /* Blue */
+    --border-color: rgba(101, 123, 131, 0.15);
+    --header-bg: rgba(238, 232, 213, 0.7);
+    --caret-color: #657b83;
+    --caret-shadow: rgba(101, 123, 131, 0.4);
+    --btn-color-close: #dc322f; /* Red */
+    --btn-color-maximize: #b58900; /* Yellow */
+    --btn-color-minimize: #859900; /* Green */
+    --scrollbar-thumb: #93a1a1;
+    --scrollbar-track: transparent;
+    --logo-bg-image: url('./solus.png');
+    --logo-bg-opacity: 0.05;
+    --text-glow: none;
+}
+
+/* --- Tema Neon Blade --- */
+body.neon-blade-theme {
+    --background-color: #0d0221;
+    --terminal-bg: rgba(13, 2, 33, 0.5);
+    --text-color: #f0f0f0;
+    --prompt-color: #ff00c1;
+    --border-color: rgba(255, 0, 193, 0.2);
+    --header-bg: rgba(13, 2, 33, 0.7);
+    --caret-color: #f0f0f0;
+    --caret-shadow: rgba(255, 0, 193, 0.5);
+    --btn-color-close: #ff5555;
+    --btn-color-maximize: #00d9ff;
+    --btn-color-minimize: #50fa7b;
+    --scrollbar-thumb: #ff00c1;
+    --scrollbar-track: transparent;
+    --logo-bg-image: url('./solus-white.png');
+    --logo-bg-opacity: 0.04;
+    --text-glow: 0 0 4px rgba(240, 240, 240, 0.2);
+}
+
+/* --- Tema Matrix Green --- */
+body.matrix-green-theme {
+    --background-color: #050505;
+    --terminal-bg: rgba(5, 5, 5, 0.4);
+    --text-color: #39ff14;
+    --prompt-color: #39ff14;
+    --border-color: rgba(57, 255, 20, 0.2);
+    --header-bg: rgba(5, 5, 5, 0.7);
+    --caret-color: #39ff14;
+    --caret-shadow: rgba(57, 255, 20, 0.5);
+    --btn-color-close: #ff4136;
+    --btn-color-maximize: #ffdc00;
+    --btn-color-minimize: #39ff14;
+    --scrollbar-thumb: #39ff14;
+    --scrollbar-track: transparent;
+    --logo-bg-image: url('./solus-white.png');
+    --logo-bg-opacity: 0.05;
+    --text-glow: 0 0 5px rgba(57, 255, 20, 0.25);
 }
 
 
+/* ---==============================--- */
+/* ---   ANIMAȚII ȘI STILURI DE BAZĂ --- */
+/* ---==============================--- */
+
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(5px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { 
+        opacity: 0; 
+        transform: translateY(8px); 
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0); 
+    }
+}
+
+@keyframes blink {
+    50% { opacity: 0; }
+}
+
+@keyframes startupAnimation {
+    from {
+        opacity: 0;
+        transform: scale(0.98) translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+@keyframes scanline {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(100%); }
+}
+
+@keyframes subtle-glow-pulse {
+    0%, 100% {
+        opacity: 0.4;
+    }
+    50% {
+        opacity: 0.7;
+    }
 }
 
 /* --- Stiluri Generale --- */
@@ -65,12 +198,12 @@ body {
     justify-content: center;
     align-items: center;
     height: 100vh;
-    transition: background-color 0.3s ease, color 0.3s ease;
     overflow: hidden; 
     position: relative;
+    transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* --- Strat pentru Logo Fundal (Pseudo-element) --- */
+/* --- Strat pentru Logo Fundal --- */
 body::before {
     content: '';
     position: absolute;
@@ -89,24 +222,44 @@ body::before {
 }
 
 
-/* --- Containerul Principal (Fereastra Terminalului) --- */
-#container {
+/* ---==============================--- */
+/* --- STILURI VIZUALE RAFINATE     --- */
+/* ---==============================--- */
+
+/* --- NOU: Wrapper pentru efecte speciale --- */
+.glow-container {
+    position: relative;
     width: 70vw;
     height: 80vh;
+}
+
+/* --- MODIFICAT: Acum umple 100% din glow-container --- */
+#container {
+    width: 100%;
+    height: 100%;
     background-color: var(--terminal-bg);
-    backdrop-filter: blur(3px); 
+    backdrop-filter: blur(10px);
     border-radius: 12px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.1), inset 0 0 100px rgba(255,255,255,0.1);
+    box-shadow: 
+        0 0 2px rgba(0, 0, 0, 0.07),
+        0 2px 8px rgba(0, 0, 0, 0.07),
+        0 10px 20px rgba(0, 0, 0, 0.05),
+        0 20px 40px rgba(0, 0, 0, 0.05);
     display: flex;
     flex-direction: column;
     overflow: hidden;
     position: relative;
     border: 1px solid var(--border-color);
     transition: box-shadow 0.3s ease, border-color 0.3s ease, background-color 0.3s ease;
+    animation: startupAnimation 0.5s ease-out forwards;
 }
 
 #container:focus-within {
-    box-shadow: 0 10px 50px rgba(0,0,0,0.15);
+    box-shadow: 
+        0 0 2px rgba(0, 0, 0, 0.07),
+        0 2px 8px rgba(0, 0, 0, 0.07),
+        0 10px 20px rgba(94, 129, 172, 0.1),
+        0 20px 40px rgba(94, 129, 172, 0.1);
     border-color: rgba(94, 129, 172, 0.5);
 }
 
@@ -128,12 +281,11 @@ body::before {
     font-weight: 500;
     letter-spacing: 1px;
     text-transform: uppercase;
-    transition: color 0.3s ease;
     display: flex;
     align-items: center;
+    transition: color 0.3s ease;
 }
 
-/* --- STILUL NOU PENTRU PICTOGRAMĂ --- */
 .title-icon {
     display: inline-block;
     width: 1em;
@@ -159,7 +311,7 @@ body::before {
     border-radius: 50%;
     cursor: pointer;
     border: none;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
 }
 
 .btn.minimize { background-color: var(--btn-color-minimize); }
@@ -168,6 +320,13 @@ body::before {
 
 .btn:hover {
     transform: scale(1.1);
+    filter: brightness(1.15);
+}
+
+.btn:active {
+    transform: scale(0.95);
+    filter: brightness(0.9);
+    transition: transform 0.1s ease;
 }
 
 .btn:hover.close { box-shadow: 0 0 8px var(--btn-color-close); }
@@ -190,6 +349,11 @@ body::before {
 #terminal::-webkit-scrollbar-thumb {
     background-color: var(--scrollbar-thumb);
     border-radius: 4px;
+}
+
+#terminal-output, #terminal-input {
+    text-shadow: var(--text-glow, none);
+    transition: color 0.3s ease, text-shadow 0.3s ease;
 }
 
 #terminal-output {
@@ -234,23 +398,18 @@ body::before {
     font-size: inherit;
     width: 100%;
     padding: 0;
-    transition: color 0.3s ease;
-}
-
-@keyframes blink {
-    50% { opacity: 0; }
 }
 
 .caret {
     display: inline-block;
     width: 8px;
-    height: 1.1em;
+    height: 1.2em;
     background-color: var(--caret-color);
-    border-radius: 2px;
+    border-radius: 1px;
     animation: blink 1.1s step-end infinite;
     margin-left: 2px;
-    box-shadow: 0 0 8px var(--caret-shadow);
-    transition: background-color 0.3s ease;
+    box-shadow: 0 0 10px var(--caret-shadow);
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 #container:not(:focus-within) .caret {
@@ -265,7 +424,7 @@ body::before {
 }
 
 .new-line-anim {
-    animation: fadeIn 0.3s ease-in;
+    animation: fadeIn 0.4s ease-out;
 }
 
 .grep-highlight {
@@ -273,4 +432,41 @@ body::before {
     color: (var(--text-color));
     padding: 2px 4px;
     border-radius: 2px;
+}
+
+/* ---==============================--- */
+/* --- EFECTE SPECIALE PENTRU TEME  --- */
+/* ---==============================--- */
+
+/* Efect de Scanlines pentru Matrix Green */
+body.matrix-green-theme #container::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+        transparent 0,
+        rgba(0, 0, 0, 0.2) 1px,
+        transparent 2px
+    );
+    z-index: 2;
+}
+
+/* CORECTAT: Țintim .glow-container care NU are overflow:hidden */
+body.neon-blade-theme .glow-container::before {
+    content: '';
+    position: absolute;
+    top: 0; 
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1; 
+    background: var(--prompt-color); 
+    border-radius: 12px; 
+    filter: blur(15px);
+    opacity: 0; /* Opacitate inițială pentru animație lină */
+    animation: subtle-glow-pulse 4s infinite ease-in-out;
 }

@@ -7,7 +7,7 @@
 export function* logic({ args }) {
     const selectedTheme = args[0];
 
-    if (selectedTheme === 'light' || selectedTheme === 'dark') {
+    if (selectedTheme === 'light' || selectedTheme === 'nord' || selectedTheme === 'dracula' || selectedTheme === 'solarized-light' || selectedTheme === 'neon-blade' || selectedTheme === 'matrix-green' || selectedTheme === 'true-dark') {
         // Emitem un syscall pentru a cere schimbarea temei.
         // Comanda nu manipulează direct DOM-ul.
         yield {
@@ -23,7 +23,7 @@ export function* logic({ args }) {
         // Afișăm un mesaj de ajutor dacă argumentul este invalid.
         yield {
             type: 'stdout',
-            data: { type: 'error', message: 'Usage: theme [light|dark]' }
+            data: { type: 'error', message: 'Usage: theme [light|true-dark|nord|dracula|solarized-light|neon-blade|matrix-green]' }
         };
     }
 }
