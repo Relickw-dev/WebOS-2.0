@@ -132,7 +132,10 @@ async function handleInput({ value }) {
             
             try {
                 const stat = await syscall('vfs.stat', { path: resolvedPath, cwd: currentDirectory });
-                if (stat.type !== 'dir') {
+                
+                // --- MODIFICAREA ESTE AICI ---
+                // Am schimbat 'dir' în 'directory' pentru a corespunde cu ce returnează API-ul.
+                if (stat.type !== 'directory') { 
                     syscall('terminal.write', { message: `cd: not a directory: ${targetPath}`, isError: true });
                 } else {
                     currentDirectory = resolvedPath;

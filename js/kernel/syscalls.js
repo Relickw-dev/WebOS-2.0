@@ -7,12 +7,21 @@ import { eventBus } from '../eventBus.js';
  * și apelează funcția corespunzătoare din acest obiect.
  */
 export const syscalls = {
+    // --- Terminal Syscalls ---
     'terminal.write': async (params) => {
         eventBus.emit('terminal.write', params);
     },
     'terminal.clear': async () => {
         eventBus.emit('terminal.clear');
     },
+    'terminal.set_theme': async (params) => {
+        eventBus.emit('terminal.set_theme', params);
+    },
+
+    // --- VFS Syscalls ---
+    // Toate funcțiile VFS de mai jos sunt deja adaptate corect.
+    // Ele preiau obiectul 'params' (care conține path, cwd, etc.)
+    // și îl transmit mai departe prin eventBus folosind {...params}.
     'vfs.readDir': (params) => {
         return new Promise((resolve, reject) => {
             eventBus.emit('vfs.readDir', { ...params, resolve, reject });
@@ -58,6 +67,8 @@ export const syscalls = {
             eventBus.emit('vfs.grep', { ...params, resolve, reject });
         });
     },
+
+    // --- Process Syscalls ---
     'proc.list': () => {
         return new Promise((resolve, reject) => {
             eventBus.emit('proc.list', { resolve, reject });
@@ -68,12 +79,8 @@ export const syscalls = {
     },
     'proc.kill': (params) => {
         return new Promise((resolve, reject) => {
-            // Evenimentul este acum ascultat de noul kernel, care va termina worker-ul.
             eventBus.emit('proc.kill', { ...params, resolve, reject });
         });
-    },
-    'terminal.set_theme': async (params) => {
-        eventBus.emit('terminal.set_theme', params);
     },
 };
 

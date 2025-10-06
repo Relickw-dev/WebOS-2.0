@@ -1,7 +1,9 @@
 // File: js/bin/cat.js
 
-export function* logic({ args, cwd, stdin, syscall }) {
-    // Funcție internă pentru a procesa și trimite un bloc de text linie cu linie
+// Modificare 1: Funcția devine un generator asincron (async function*)
+export async function* logic({ args, cwd, stdin, syscall }) {
+
+    // Funcția internă rămâne un generator sincron, deoarece nu face operații asincrone
     function* processAndYield(content) {
         if (typeof content !== 'string') return;
         
@@ -10,10 +12,12 @@ export function* logic({ args, cwd, stdin, syscall }) {
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             
+            // Nu afișăm ultima linie goală dacă fișierul se termină cu newline
             if (i === lines.length - 1 && line === '') {
                 continue;
             }
 
+            // Yield pentru stdout rămâne la fel
             yield {
                 type: 'stdout',
                 data: { type: 'string', message: line }
@@ -39,11 +43,8 @@ export function* logic({ args, cwd, stdin, syscall }) {
     // Cazul 3: Se citesc unul sau mai multe fișiere
     for (const path of args) {
         try {
-            const content = yield {
-                type: 'syscall',
-                name: 'vfs.readFile',
-                params: { path, cwd }
-            };
+            // Modificare 2: Apelul de sistem se face cu 'await syscall'
+            const content = await syscall('vfs.readFile', { path, cwd });
             yield* processAndYield(content);
         } catch (e) {
             yield { 
