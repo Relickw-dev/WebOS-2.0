@@ -1,18 +1,18 @@
 // File: js/bin/mkdir.js
 
 /**
- * Logica principală pentru comanda mkdir, adaptată pentru noul sistem de procese.
+ * Logica principală pentru comanda mkdir, adaptată pentru noul sistem de procese preemptiv.
  */
-export function* logic({ args, cwd }) {
+export async function* logic({ args, cwd, syscall }) {
     const paths = args.filter(arg => !arg.startsWith('-'));
 
     if (paths.length === 0) {
-        // Înlocuim onOutput cu 'yield' pentru a trimite un mesaj de eroare.
+        // Trimitem un mesaj de eroare prin 'yield'.
         yield { 
             type: 'stdout', 
-            data: { type: 'error', message: 'mkdir: missing operand' } 
+            data: { message: 'mkdir: missing operand', isError: true } 
         };
-        return; // Oprim execuția generatorului.
+        return; // Oprim execuția.
     }
 
     for (const path of paths) {
@@ -22,18 +22,14 @@ export function* logic({ args, cwd }) {
                 ? path 
                 : [cwd, path].join('/').replace(/\/+/g, '/');
             
-            // Înlocuim 'await syscall(...)' cu 'yield' pentru a cere un syscall.
-            yield {
-                type: 'syscall',
-                name: 'vfs.mkdir',
-                params: { path: absolutePath }
-            };
+            // Apelăm direct syscall-ul folosind 'await'.
+            await syscall('vfs.mkdir', { path: absolutePath });
 
         } catch (e) {
             // Trimitem eroarea prin 'yield'.
             yield { 
                 type: 'stdout', 
-                data: { type: 'error', message: e.message || `mkdir: cannot create directory ‘${path}’` } 
+                data: { message: e.message || `mkdir: cannot create directory ‘${path}’`, isError: true } 
             };
         }
     }

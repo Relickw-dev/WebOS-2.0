@@ -1,93 +1,98 @@
 // File: js/devices/terminal.js
 import { eventBus } from '../eventBus.js';
-import { logger } from '../utils/logger.js';
 
-const terminal = {
+export const terminal = {
+    init() {
+        this.output = document.getElementById('terminal-output');
+        this.inputLine = document.getElementById('terminal-input-line');
+        this.input = document.getElementById('terminal-input');
+        this.promptElement = document.getElementById('prompt');
 
-    init: () => {
-        const output = document.getElementById('terminal-output');
-        const input = document.getElementById('terminal-input');
-        const promptSpan = document.getElementById('prompt');
-        if (!output || !input || !promptSpan ) {
-            logger.error('Terminal elements not found.');
-            return;
+        // Ne asigurăm că elementele există înainte de a adăuga event listeners
+        if (this.input) {
+            this.input.addEventListener('keydown', this._handleKeyDown.bind(this));
         }
 
-        eventBus.on('terminal.write', (data) => {
-            const element = document.createElement('div');
-            if (data.isPrompt) {
-                element.innerHTML = `<span class="prompt">${promptSpan.textContent}</span> ${data.message}`;
-            } else {
-                element.innerHTML = data.message.replace(/\n/g, '<br>');
-                if (data.type === 'error') {
-                    element.classList.add('error');
-                }
-            }
-            output.appendChild(element);
-            output.scrollTop = output.scrollHeight;
-        });
-
-        eventBus.on('terminal.clear', () => {
-            output.innerHTML = '';
-        });
-
-        eventBus.on('terminal.set_input', ({ value }) => {
-            input.value = value;
-            input.focus();
-            input.setSelectionRange(value.length, value.length);
-        });
+        // --- MODIFICARE AICI ---
+        // Folosim selectorul corect, fie ID-ul '#terminal', fie clasa '.terminal-container'
+        const terminalContainer = document.getElementById('terminal'); 
+        if (terminalContainer) {
+            terminalContainer.addEventListener('click', () => {
+                if(this.input) this.input.focus();
+            });
+        }
         
-        eventBus.on('terminal.set_theme', ({ theme }) => {
-            const allThemeClasses = [
-            'nord-theme', 
-            'true-dark-theme',
-            'dracula-theme', 
-            'solarized-light-theme',
-            'neon-blade-theme',   
-            'matrix-green-theme'  
-        ];
-            document.body.classList.remove(...allThemeClasses);
-            if (theme === 'nord') {
-                document.body.classList.add('nord-theme');
-            } else if (theme === 'dracula') {
-                document.body.classList.add('dracula-theme');
-            } else if (theme === 'solarized-light') {
-                document.body.classList.add('solarized-light-theme');
-            } else if (theme === 'neon-blade') {
-                document.body.classList.add('neon-blade-theme');
-            } else if (theme === 'matrix-green') {
-                document.body.classList.add('matrix-green-theme');
-            } else if (theme === 'true-dark') {
-                document.body.classList.add('true-dark-theme');
-            }
-        });
+        eventBus.on('terminal.write', (data) => this.write(data));
+        eventBus.on('terminal.clear', () => this.clear());
+        eventBus.on('terminal.set_input', ({ value }) => this.setInput(value));
+        eventBus.on('terminal.prompt', ({ cwd }) => this.showPrompt(cwd));
 
-        input.addEventListener('keydown', (e) => {
-            switch (e.key) {
-                case 'Enter':
-                    e.preventDefault();
-                    eventBus.emit('shell.input', { value: input.value });
-                    input.value = '';
-                    break;
-                
-                case 'ArrowUp':
-                    e.preventDefault();
-                    eventBus.emit('shell.history.prev');
-                    break;
-                    
-                case 'ArrowDown':
-                    e.preventDefault();
-                    eventBus.emit('shell.history.next');
-                    break;
+        if(this.input) this.input.focus();
+    },
 
-                case 'Tab':
-                    e.preventDefault();
-                    eventBus.emit('shell.autocomplete', { value: input.value });
-                    break;
-            }
-        });
-        logger.info('Terminal Driver: Initialized.');
+    clear() {
+        if(this.output) this.output.innerHTML = '';
+    },
+    
+    write({ message, isError = false, isHtml = false }) {
+        if (!this.output) return;
+        const line = document.createElement('div');
+        line.classList.add('terminal-line');
+        if (isError) {
+            line.classList.add('error');
+        }
+        
+        if(isHtml) {
+            line.innerHTML = message;
+        } else {
+            // Prevenim redarea HTML-ului dacă nu este specificat, pentru securitate
+            line.textContent = message;
+        }
+
+        this.output.appendChild(line);
+        this.output.scrollTop = this.output.scrollHeight;
+    },
+
+    setInput(value) {
+        if(this.input) {
+            this.input.value = value;
+            this.input.focus();
+        }
+    },
+
+    showPrompt(cwd) {
+        if(this.promptElement) this.promptElement.textContent = `user@webos:${cwd}$`;
+        if(this.inputLine) this.inputLine.style.visibility = 'visible';
+        if(this.input) this.input.focus();
+        if(this.output) this.output.scrollTop = this.output.scrollHeight;
+    },
+
+    _handleKeyDown(e) {
+        if (!this.input) return;
+        const value = this.input.value; // Trim se face în shell
+
+        switch (e.key) {
+            case 'Enter':
+                this.write({ message: `${this.promptElement.textContent} ${value}` });
+                eventBus.emit('shell.input', { value });
+                this.input.value = '';
+                if(this.inputLine) this.inputLine.style.visibility = 'hidden';
+                break;
+            
+            case 'ArrowUp':
+                e.preventDefault();
+                eventBus.emit('shell.history.prev');
+                break;
+
+            case 'ArrowDown':
+                e.preventDefault();
+                eventBus.emit('shell.history.next');
+                break;
+
+            case 'Tab':
+                e.preventDefault();
+                eventBus.emit('shell.autocomplete', { value: this.input.value });
+                break;
+        }
     }
-}
-
-export default terminal;
+};

@@ -5,7 +5,7 @@
  * Copiază un fișier sau un director (cu -r) către o destinație.
  * Adaptată pentru sistemul de procese preemtiv.
  */
-export function* logic({ args, cwd }) {
+export function* logic({ args, cwd, syscall }) {
     // Detectăm flag-ul de recursivitate
     const isRecursive = args.includes('-r') || args.includes('-rf');
 

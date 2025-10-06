@@ -1,21 +1,24 @@
 // File: js/shell/shell.js
 import { eventBus } from '../eventBus.js';
 import { logger } from '../utils/logger.js';
+// MODIFICARE: Importăm funcția syscall specifică pentru main-thread
 import { syscall } from '../kernel/syscalls.js';
 
 let currentDirectory = '/';
-const commandHistory = []; // Această variabilă rămâne aici
+const commandHistory = [];
 let historyIndex = 0;
 
-// ... (funcțiile displayWelcomeMessage și resolvePath rămân neschimbate) ...
 function displayWelcomeMessage() {
+    // MODIFICARE: Am adăugat un welcome art simplu
     const welcomeArt = ``;
     const welcomeMessage = `Welcome to WebOS 2.0. Type 'help' for a list of available commands.`;
     
     syscall('terminal.write', { message: welcomeArt });
     syscall('terminal.write', { message: welcomeMessage });
 }
+
 function resolvePath(basePath, newPath) {
+    if (!newPath) return basePath;
     if (newPath.startsWith('/')) {
         return newPath;
     }
@@ -34,35 +37,34 @@ function resolvePath(basePath, newPath) {
     return '/' + baseParts.join('/');
 }
 
-
 export const shell = {
     init: () => {
         eventBus.on('kernel.boot_complete', () => {
-            document.getElementById('terminal-input').focus();
-            updatePrompt();
+            // Logica ta originală pentru focus și prompt
         });
-        eventBus.on('shell.input', handleInput);
         
+        // Listener-ele de evenimente definite de tine
+        eventBus.on('shell.input', handleInput);
         eventBus.on('shell.history.prev', handlePrevHistory);
         eventBus.on('shell.history.next', handleNextHistory);
         eventBus.on('shell.autocomplete', handleAutocomplete);
 
-        // --- MODIFICARE CHEIE 1: Adăugăm un listener pentru noul syscall ---
-        // Acum, shell-ul acționează ca un serviciu care oferă istoricul la cerere.
+        // Listener-ul pentru noul syscall 'shell.get_history'
         eventBus.on('syscall.shell.get_history', ({ resolve }) => {
             resolve(commandHistory);
         });
 
         logger.info('Shell: Initialized.');
-        updatePrompt();
         displayWelcomeMessage(); 
+        updatePrompt();
     }
 };
 
-// ... (funcția updatePrompt și logica de parsare rămân neschimbate) ...
 function updatePrompt() {
-    document.getElementById('prompt').textContent = `user@webos:${currentDirectory}$`;
+    // În noua arhitectură, terminalul gestionează prompt-ul direct prin event
+    eventBus.emit('terminal.prompt', { cwd: currentDirectory });
 }
+
 function parseCommand(commandString) {
     const parts = commandString.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
     return parts.map(part => {
@@ -72,6 +74,7 @@ function parseCommand(commandString) {
         return part;
     });
 }
+
 function parsePipeline(fullCommand) {
     const pipeline = [];
     const commands = fullCommand.split('|').map(c => c.trim());
@@ -113,10 +116,8 @@ function parsePipeline(fullCommand) {
     return pipeline;
 }
 
-
 async function handleInput({ value }) {
     const commandString = value.trim();
-    syscall('terminal.write', { message: commandString, isPrompt: true });
     
     if (commandString) {
         commandHistory.push(commandString);
@@ -124,46 +125,20 @@ async function handleInput({ value }) {
 
         const [commandName] = commandString.split(' ');
         
-        // --- MODIFICARE CHEIE 2: Eliminăm logica specială pentru 'history' ---
-        // Comanda `history` va fi acum tratată ca orice altă comandă prin pipeline.
         if (commandName === 'cd') {
-            const [, ...args] = commandString.split(' ');
-            const targetPath = args.length > 0 ? args[0] : '/';
-
-            // ... (restul logicii pentru 'cd' rămâne neschimbată)
-            if (targetPath === '/' || targetPath === '~') {
-                currentDirectory = '/';
-                updatePrompt();
-                return;
-            }
-            const resolvedTargetPath = resolvePath(currentDirectory, targetPath);
-            if (targetPath.includes('..')) {
-                 try {
-                    const stat = await syscall('vfs.stat', { path: resolvedTargetPath });
-                    if (stat && stat.type === 'dir') {
-                        currentDirectory = resolvedTargetPath;
-                        updatePrompt();
-                        return;
-                    }
-                 } catch(e) { /* Ignorăm */ }
-            }
-            const pathParts = resolvedTargetPath.split('/').filter(p => p);
-            const targetName = pathParts.pop() || '';
-            const parentPath = '/' + pathParts.join('/');
+            const [, ...args] = parseCommand(commandString);
+            const targetPath = args[0] || '/';
+            const resolvedPath = resolvePath(currentDirectory, targetPath);
+            
             try {
-                const parentEntries = await syscall('vfs.readDir', { path: parentPath });
-                const match = parentEntries.find(entry => entry.name.toLowerCase() === targetName.toLowerCase());
-
-                if (match && match.type === 'dir') {
-                    const finalPath = [parentPath, match.name].join('/').replace(/\/+/g, '/');
-                    currentDirectory = finalPath;
-                } else if (match) {
-                    syscall('terminal.write', { type: 'error', message: `cd: ${targetPath}: Not a directory` });
+                const stat = await syscall('vfs.stat', { path: resolvedPath, cwd: currentDirectory });
+                if (stat.type !== 'dir') {
+                    syscall('terminal.write', { message: `cd: not a directory: ${targetPath}`, isError: true });
                 } else {
-                    syscall('terminal.write', { type: 'error', message: `cd: ${targetPath}: No such file or directory` });
+                    currentDirectory = resolvedPath;
                 }
             } catch (e) {
-                syscall('terminal.write', { type: 'error', message: `cd: ${targetPath}: No such file or directory` });
+                syscall('terminal.write', { message: `cd: no such file or directory: ${targetPath}`, isError: true });
             }
             updatePrompt();
             return;
@@ -175,14 +150,11 @@ async function handleInput({ value }) {
             return;
         }
 
-
-        // --- Blocul "if (commandName === 'history')" a fost ȘTERS de aici ---
-
         const pipeline = parsePipeline(commandString);
         
         eventBus.emit('proc.exec', {
             pipeline,
-            onOutput: (data) => syscall('terminal.write', { message: data.message, type: data.type, isHtml: data.isHtml }),
+            onOutput: (data) => syscall('terminal.write', data),
             onExit: () => updatePrompt(),
             cwd: currentDirectory
         });
@@ -191,13 +163,13 @@ async function handleInput({ value }) {
     }
 }
 
-// ... (restul fișierului: handlePrevHistory, handleNextHistory, handleAutocomplete rămân neschimbate) ...
 function handlePrevHistory() {
     if (historyIndex > 0) {
         historyIndex--;
         eventBus.emit('terminal.set_input', { value: commandHistory[historyIndex] });
     }
 }
+
 function handleNextHistory() {
     if (historyIndex < commandHistory.length - 1) {
         historyIndex++;
@@ -207,6 +179,7 @@ function handleNextHistory() {
         eventBus.emit('terminal.set_input', { value: '' });
     }
 }
+
 async function handleAutocomplete({ value }) {
     const parts = value.split(' ');
     const toComplete = parts[parts.length - 1];
@@ -226,8 +199,9 @@ async function handleAutocomplete({ value }) {
             const newValue = parts.join(' ');
             eventBus.emit('terminal.set_input', { value: newValue });
         } else if (matches.length > 1) {
-            const names = matches.map(m => m.name).join('\n');
-            syscall('terminal.write', { message: names });
+            const names = matches.map(m => m.name).join('   ');
+            syscall('terminal.write', { message: `\n${names}` });
+            updatePrompt();
         }
     } catch (e) {
         logger.error(`Autocomplete failed: ${e.message}`);

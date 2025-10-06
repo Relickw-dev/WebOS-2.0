@@ -1,6 +1,6 @@
 // File: js/bin/cat.js
 
-export function* logic({ args, cwd, stdin }) {
+export function* logic({ args, cwd, stdin, syscall }) {
     // Funcție internă pentru a procesa și trimite un bloc de text linie cu linie
     function* processAndYield(content) {
         if (typeof content !== 'string') return;

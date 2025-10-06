@@ -1,7 +1,7 @@
 // File: js/bin/head.js
 
 // Funcția ajutătoare pentru a rezolva căile rămâne neschimbată.
-function resolvePath(basePath, newPath) {
+function resolvePath(basePath, newPath, syscall ) {
     if (newPath.startsWith('/')) {
         return newPath;
     }

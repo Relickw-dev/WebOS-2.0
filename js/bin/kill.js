@@ -1,5 +1,5 @@
 // File: js/bin/kill.js
-export const logic = async function*({ args }) {
+export const logic = async function*({ args, syscall }) {
     // Check if a PID was provided
     if (!args || args.length === 0) {
         yield { type: 'stdout', data: { type: 'error', message: 'Usage: kill [pid]' } };

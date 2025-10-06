@@ -18,13 +18,13 @@ function resolvePath(basePath, newPath) {
 }
 
 /**
- * Logica principală pentru comanda grep, adaptată ca generator.
+ * Logica principală pentru comanda grep, adaptată ca async generator.
  */
-export function* logic({ args, cwd, stdin }) {
+export async function* logic({ args, cwd, stdin, syscall }) {
     if (args.length < 1) {
         yield { 
             type: 'stdout', 
-            data: { type: 'error', message: 'grep: Missing pattern' } 
+            data: { message: 'grep: Missing pattern', isError: true } 
         };
         return;
     }
@@ -36,7 +36,7 @@ export function* logic({ args, cwd, stdin }) {
     } catch (e) {
         yield { 
             type: 'stdout', 
-            data: { type: 'error', message: `grep: Invalid pattern: ${e.message}` } 
+            data: { message: `grep: Invalid pattern: ${e.message}`, isError: true } 
         };
         return;
     }
@@ -48,18 +48,15 @@ export function* logic({ args, cwd, stdin }) {
             content = stdin;
         } else if (args.length > 1) {
             const filePath = args[1];
+            // Am pasat și syscall aici pentru consistență, deși nu este folosit în funcție
             const fullPath = resolvePath(cwd, filePath);
             
-            // Înlocuim 'await syscall' cu 'yield'
-            content = yield {
-                type: 'syscall',
-                name: 'vfs.readFile',
-                params: { path: fullPath }
-            };
+            // Apelăm direct syscall-ul folosind 'await'.
+            content = await syscall('vfs.readFile', { path: fullPath });
         } else {
             yield { 
                 type: 'stdout', 
-                data: { type: 'error', message: 'grep: Missing file or piped input' } 
+                data: { message: 'grep: Missing file or piped input', isError: true } 
             };
             return;
         }
@@ -74,7 +71,7 @@ export function* logic({ args, cwd, stdin }) {
                     regex.lastIndex = 0; 
                     const highlightedLine = line.replace(regex, (match) => `<span class="grep-highlight">${match}</span>`);
                     
-                    // Înlocuim 'onOutput' cu 'yield'
+                    // Trimitem output-ul prin 'yield'.
                     yield { 
                         type: 'stdout', 
                         data: { message: highlightedLine, isHtml: true } 
@@ -86,7 +83,7 @@ export function* logic({ args, cwd, stdin }) {
     } catch (e) {
         yield { 
             type: 'stdout', 
-            data: { type: 'error', message: `grep: ${e.message}` } 
+            data: { message: `grep: ${e.message}`, isError: true } 
         };
     }
 }
