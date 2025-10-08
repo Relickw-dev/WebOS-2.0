@@ -13,5 +13,11 @@ export const eventBus = {
         if (eventHandlers) {
             eventHandlers.forEach(handler => handler(data));
         }
+    },
+    off: (eventName, handlerToRemove) => {
+        const eventHandlers = handlers.get(eventName);
+        if (eventHandlers) {
+            handlers.set(eventName, eventHandlers.filter(h => h !== handlerToRemove));
+        }
     }
 };

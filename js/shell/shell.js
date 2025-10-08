@@ -1,23 +1,15 @@
-// File: js/shell/shell.js
+// File: js/shell/shell.js (Versiune refactorizată ca o Clasă)
 import { eventBus } from '../eventBus.js';
 import { logger } from '../utils/logger.js';
 import { syscall } from '../kernel/syscalls.js';
 
-let currentDirectory = '/';
-const commandHistory = [];
-let historyIndex = 0;
-let availableCommands = [];
+// --- Funcții Helper și Stare Globală (partajată între toate instanțele de shell) ---
 
-let autocompleteSession = {
-    lastCompletedValue: null, // Ultima valoare setată de autocompletare
-    matches: [],
-    currentIndex: 0,
-    contextType: null,
-    prefix: '', // Tot ce e înainte de segmentul curent (ex: 'cmd | ')
-    baseSegment: '' // Segmentul original pe care se face completarea
-};
+let availableCommands = [];
+let commandsFetched = false; // Flag pentru a ne asigura că preluăm comenzile o singură dată
 
 async function fetchCommands() {
+    if (commandsFetched) return;
     try {
         const response = await fetch('http://localhost:3000/api/commands');
         if (!response.ok) {
@@ -30,18 +22,7 @@ async function fetchCommands() {
         logger.error(`Failed to fetch commands: ${error.message}. Falling back to a predefined list.`);
         availableCommands = ['cat', 'cd', 'clear', 'cp', 'date', 'echo', 'grep', 'head', 'help', 'history', 'kill', 'ls', 'mkdir', 'mv', 'ps', 'pwd', 'rm', 'sleep', 'stat', 'theme', 'touch', 'wc'];
     }
-}
-
-function displayWelcomeMessage() {
-    // Am eliminat complet ASCII art-ul pentru un aspect curat.
-    const welcomeMessage = `Solus [Version 1.0]
-An open-source project.
-
-Type 'help' for a list of available commands.
-`;
-
-    // Se folosește un singur apel pentru a afișa tot mesajul.
-    syscall('terminal.write', { message: welcomeMessage });
+    commandsFetched = true;
 }
 
 function resolvePath(basePath, newPath) {
@@ -54,26 +35,6 @@ function resolvePath(basePath, newPath) {
         else if (part !== '.' && part !== '') baseParts.push(part);
     }
     return '/' + baseParts.join('/');
-}
-
-export const shell = {
-    init: async () => {
-        await fetchCommands();
-        eventBus.on('shell.input', handleInput);
-        eventBus.on('shell.history.prev', handlePrevHistory);
-        eventBus.on('shell.history.next', handleNextHistory);
-        eventBus.on('shell.autocomplete', handleAutocomplete);
-        eventBus.on('syscall.shell.get_history', ({ resolve }) => {
-            resolve(commandHistory);
-        });
-        logger.info('Shell: Initialized.');
-        displayWelcomeMessage(); 
-        updatePrompt();
-    }
-};
-
-function updatePrompt() {
-    eventBus.emit('terminal.prompt', { cwd: currentDirectory });
 }
 
 function parseCommand(commandString) {
@@ -110,179 +71,202 @@ function parsePipeline(fullCommand) {
         }
 
         const [name, ...args] = parseCommand(commandStr);
+        if (!name) continue;
 
-        if (!name) continue; // Ignoră comenzile goale (ex: `cat file | | grep a`)
-
-        pipeline.push({
-            name,
-            args,
-            stdout,
-            outputFile,
-            append
-        });
+        pipeline.push({ name, args, stdout, outputFile, append });
     }
 
-    // Setează stdout-ul la 'pipe' pentru toate comenzile, cu excepția ultimei
     for (let i = 0; i < pipeline.length - 1; i++) {
         pipeline[i].stdout = 'pipe';
     }
-
     return pipeline;
 }
 
-async function handleInput({ value }) {
-    const commandString = value.trim();
-    
-    if (commandString) {
-        commandHistory.push(commandString);
-        historyIndex = commandHistory.length;
 
-        const [commandName] = parseCommand(commandString);
+// --- Clasa Shell ---
+
+export class Shell {
+    constructor(terminalInstance) {
+        this.terminal = terminalInstance;
+        this.pid = terminalInstance.pid;
         
-        if (commandName === 'cd') {
-            const [, targetPath = '/'] = parseCommand(commandString);
-            const resolvedPath = resolvePath(currentDirectory, targetPath);
-            try {
-                const stat = await syscall('vfs.stat', { path: resolvedPath });
-                if (stat.type !== 'directory') {
-                    syscall('terminal.write', { message: `cd: not a directory: ${targetPath}`, isError: true });
-                } else {
-                    currentDirectory = resolvedPath;
-                }
-            } catch (e) {
-                syscall('terminal.write', { message: `cd: no such file or directory: ${targetPath}`, isError: true });
-            }
-            updatePrompt();
-            return;
-        }
+        // Starea specifică acestei instanțe
+        this.currentDirectory = '/';
+        this.commandHistory = [];
+        this.historyIndex = 0;
+        this.autocompleteSession = {
+            lastCompletedValue: null,
+            matches: [],
+            currentIndex: 0,
+            contextType: null,
+            prefix: '',
+            baseSegment: ''
+        };
 
-        if (commandName === 'clear') {
-            syscall('terminal.clear');
-            updatePrompt();
-            return;
-        }
+        // Inițializarea asincronă se face separat
+        this.init();
+    }
 
-        const pipeline = parsePipeline(commandString);
+    async init() {
+        await fetchCommands();
         
-        eventBus.emit('proc.exec', {
-            pipeline,
-            // Asigurăm că `data` este un obiect, așa cum se așteaptă terminalul.
-            onOutput: (data) => syscall('terminal.write', data),
-            onExit: () => updatePrompt(),
-            cwd: currentDirectory
+        // În loc de listeneri globali, terminalul va apela direct aceste metode.
+        // Păstrăm un listener global doar pentru syscalls care ar putea viza shell-ul.
+        eventBus.on('syscall.shell.get_history', ({ resolve }) => {
+            // Într-o implementare multi-shell, ar trebui să decidem de la care shell să luăm istoricul.
+            // Momentan, îl vom partaja pe cel al primei instanțe (sau ultimul, depinde de timing).
+            // Pentru independență totală, acest syscall ar trebui să includă un PID.
+            resolve(this.commandHistory); 
         });
-    } else {
-        updatePrompt();
+
+        logger.info(`Shell for PID ${this.pid}: Initialized.`);
+        this.displayWelcomeMessage(); 
+        this.updatePrompt();
     }
-}
 
-function handlePrevHistory() {
-    if (historyIndex > 0) {
-        historyIndex--;
-        eventBus.emit('terminal.set_input', { value: commandHistory[historyIndex] });
+    displayWelcomeMessage() {
+        const welcomeMessage = `Solus [Version 2.0] :: Terminal PID: ${this.pid}\nType 'help' for a list of available commands.\n`;
+        this.terminal.write({ message: welcomeMessage });
     }
-}
 
-function handleNextHistory() {
-    if (historyIndex < commandHistory.length) {
-        const value = commandHistory[historyIndex] || '';
-        eventBus.emit('terminal.set_input', { value });
-        historyIndex++;
-    } else {
-        historyIndex = commandHistory.length;
-        eventBus.emit('terminal.set_input', { value: '' });
+    updatePrompt() {
+        this.terminal.showPrompt(this.currentDirectory);
     }
-}
 
-
-async function handleAutocomplete({ value }) {
-    // O nouă căutare este necesară dacă utilizatorul a modificat manual textul.
-    // Altfel, se continuă ciclul prin rezultatele deja găsite.
-    const isNewSearch = value !== autocompleteSession.lastCompletedValue;
-
-    if (isNewSearch) {
-        autocompleteSession.currentIndex = 0;
+    async handleInput(value) {
+        const commandString = value.trim();
         
-        // --- 1. Izolarea segmentului curent (partea de după ultimul '|') ---
-        const lastPipeIndex = value.lastIndexOf('|');
-        const segment = (lastPipeIndex === -1) ? value : value.substring(lastPipeIndex + 1);
+        if (commandString) {
+            this.commandHistory.push(commandString);
+            this.historyIndex = this.commandHistory.length;
 
-        // --- 2. Determinarea corectă și robustă a contextului (command vs. argument) ---
-        const wordsInSegment = segment.trim().split(/\s+/).filter(p => p.length > 0);
+            const [commandName] = parseCommand(commandString);
+            
+            if (commandName === 'cd') {
+                const [, targetPath = '/'] = parseCommand(commandString);
+                const resolvedPath = resolvePath(this.currentDirectory, targetPath);
+                try {
+                    const stat = await syscall('vfs.stat', { path: resolvedPath });
+                    if (stat.type !== 'directory') {
+                        this.terminal.write({ message: `cd: not a directory: ${targetPath}`, isError: true });
+                    } else {
+                        this.currentDirectory = resolvedPath;
+                    }
+                } catch (e) {
+                    this.terminal.write({ message: `cd: no such file or directory: ${targetPath}`, isError: true });
+                }
+                this.updatePrompt();
+                return;
+            }
 
-        if (wordsInSegment.length === 0) {
-            // Cazuri: "", "   ", "history | ", "history |   "
-            // Urmează să scriem o comandă.
-            autocompleteSession.contextType = 'command';
-        } else if (wordsInSegment.length === 1 && !value.endsWith(' ')) {
-            // Cazuri: "c", "ca", "history | gr"
-            // Încă scriem la prima comandă din segment.
-            autocompleteSession.contextType = 'command';
+            if (commandName === 'clear') {
+                this.terminal.clear();
+                this.updatePrompt();
+                return;
+            }
+
+            const pipeline = parsePipeline(commandString);
+            
+            eventBus.emit('proc.exec', {
+                pipeline,
+                onOutput: (data) => eventBus.emit(`terminal.write.${this.pid}`, data),
+                onExit: () => this.updatePrompt(),
+                cwd: this.currentDirectory
+            });
         } else {
-            // Cazuri: "ls ", "ls u", "history | grep ", "history | grep u"
-            // Am terminat comanda și acum completăm un argument.
-            autocompleteSession.contextType = 'argument';
-        }
-        
-        // --- 3. Pregătirea pentru căutare ---
-        autocompleteSession.prefix = (lastPipeIndex === -1) ? '' : value.substring(0, lastPipeIndex + 1);
-        autocompleteSession.baseSegment = segment;
-        
-        const wordToComplete = segment.trimStart().split(/\s+/).pop() || '';
-
-        // --- 4. Căutarea potrivirilor în funcție de context ---
-        if (autocompleteSession.contextType === 'command') {
-            autocompleteSession.matches = availableCommands.filter(name =>
-                name.toLowerCase().startsWith(wordToComplete.toLowerCase())
-            );
-        } else { // contextType === 'argument'
-            let prefixPath = wordToComplete;
-            let basePath = '';
-            const lastSlashIndex = prefixPath.lastIndexOf('/');
-            if (lastSlashIndex !== -1) {
-                basePath = prefixPath.substring(0, lastSlashIndex + 1);
-                prefixPath = prefixPath.substring(lastSlashIndex + 1);
-            }
-            const searchPath = resolvePath(currentDirectory, basePath);
-            try {
-                const entries = await syscall('vfs.readDir', { path: searchPath });
-                autocompleteSession.matches = entries
-                    .filter(entry => entry.name.toLowerCase().startsWith(prefixPath.toLowerCase()))
-                    .map(entry => {
-                        let name = basePath + entry.name;
-                        if (entry.type === 'directory') name += '/';
-                        return name;
-                    });
-            } catch (e) {
-                autocompleteSession.matches = [];
-            }
+            this.updatePrompt();
         }
     }
 
-    if (autocompleteSession.matches.length === 0) {
-        autocompleteSession.lastCompletedValue = null;
-        return;
+    handlePrevHistory() {
+        if (this.historyIndex > 0) {
+            this.historyIndex--;
+            this.terminal.setInput(this.commandHistory[this.historyIndex]);
+        }
     }
 
-    const currentMatch = autocompleteSession.matches[autocompleteSession.currentIndex];
-    
-    // --- 5. Reconstrucția corectă a valorii ---
-    const base = autocompleteSession.baseSegment;
-    let newValue;
-    
-    if (base.endsWith(' ')) {
-        // Dacă segmentul de bază se termina cu spațiu, adăugăm potrivirea.
-        newValue = autocompleteSession.prefix + base + currentMatch;
-    } else {
-        // Altfel, înlocuim ultimul cuvânt parțial.
-        const parts = base.split(/\s+/);
-        parts[parts.length - 1] = currentMatch;
-        newValue = autocompleteSession.prefix + parts.join(' ');
+    handleNextHistory() {
+        if (this.historyIndex < this.commandHistory.length) {
+            const value = this.commandHistory[this.historyIndex] || '';
+            this.terminal.setInput(value);
+            this.historyIndex++;
+        } else {
+            this.historyIndex = this.commandHistory.length;
+            this.terminal.setInput('');
+        }
     }
-    
-    eventBus.emit('terminal.set_input', { value: newValue });
-    
-    // Actualizăm starea pentru următorul ciclu
-    autocompleteSession.lastCompletedValue = newValue;
-    autocompleteSession.currentIndex = (autocompleteSession.currentIndex + 1) % autocompleteSession.matches.length;
+
+    async handleAutocomplete(value) {
+        const isNewSearch = value !== this.autocompleteSession.lastCompletedValue;
+
+        if (isNewSearch) {
+            this.autocompleteSession.currentIndex = 0;
+            
+            const lastPipeIndex = value.lastIndexOf('|');
+            const segment = (lastPipeIndex === -1) ? value : value.substring(lastPipeIndex + 1);
+            const wordsInSegment = segment.trim().split(/\s+/).filter(p => p.length > 0);
+
+            if (wordsInSegment.length <= 1 && !value.endsWith(' ')) {
+                this.autocompleteSession.contextType = 'command';
+            } else {
+                this.autocompleteSession.contextType = 'argument';
+            }
+            
+            this.autocompleteSession.prefix = (lastPipeIndex === -1) ? '' : value.substring(0, lastPipeIndex + 1);
+            this.autocompleteSession.baseSegment = segment;
+            
+            const wordToComplete = segment.trimStart().split(/\s+/).pop() || '';
+
+            if (this.autocompleteSession.contextType === 'command') {
+                this.autocompleteSession.matches = availableCommands.filter(name =>
+                    name.toLowerCase().startsWith(wordToComplete.toLowerCase())
+                );
+            } else { // contextType === 'argument'
+                let prefixPath = wordToComplete;
+                let basePath = '';
+                const lastSlashIndex = prefixPath.lastIndexOf('/');
+                if (lastSlashIndex !== -1) {
+                    basePath = prefixPath.substring(0, lastSlashIndex + 1);
+                    prefixPath = prefixPath.substring(lastSlashIndex + 1);
+                }
+                const searchPath = resolvePath(this.currentDirectory, basePath);
+                try {
+                    const entries = await syscall('vfs.readDir', { path: searchPath });
+                    this.autocompleteSession.matches = entries
+                        .filter(entry => entry.name.toLowerCase().startsWith(prefixPath.toLowerCase()))
+                        .map(entry => {
+                            let name = basePath + entry.name;
+                            if (entry.type === 'directory') name += '/';
+                            return name;
+                        });
+                } catch (e) {
+                    this.autocompleteSession.matches = [];
+                }
+            }
+        }
+
+        if (this.autocompleteSession.matches.length === 0) {
+            this.autocompleteSession.lastCompletedValue = null;
+            return;
+        }
+
+        const currentMatch = this.autocompleteSession.matches[this.autocompleteSession.currentIndex];
+        
+        const base = this.autocompleteSession.baseSegment;
+        let newValue;
+        
+        if (base.trim().includes(' ') || base.endsWith(' ')) {
+            const parts = base.split(/\s+/);
+            parts[parts.length - 1] = currentMatch;
+            newValue = this.autocompleteSession.prefix + parts.join(' ');
+        } else {
+            newValue = this.autocompleteSession.prefix + currentMatch;
+        }
+        
+        this.terminal.setInput(newValue);
+        
+        this.autocompleteSession.lastCompletedValue = newValue;
+        this.autocompleteSession.currentIndex = (this.autocompleteSession.currentIndex + 1) % this.autocompleteSession.matches.length;
+    }
 }
+fetchCommands(); 

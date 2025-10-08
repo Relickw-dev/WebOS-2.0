@@ -1,126 +1,121 @@
-// File: js/devices/terminal.js
+// File: js/devices/terminal.js (Versiune CORECTATĂ)
 import { eventBus } from '../eventBus.js';
 
-export const terminal = {
-    init() {
-        this.output = document.getElementById('terminal-output');
-        this.inputLine = document.getElementById('terminal-input-line');
-        this.input = document.getElementById('terminal-input');
-        this.promptElement = document.getElementById('prompt');
-
-        // Ne asigurăm că elementele există înainte de a adăuga event listeners
-        if (this.input) {
-            this.input.addEventListener('keydown', this._handleKeyDown.bind(this));
+export class Terminal {
+    constructor(pid, rootElement) {
+        if (!rootElement) {
+            console.error(`[PID ${pid}] Terminal init failed: root element must be provided.`);
+            return;
         }
 
-        // --- MODIFICARE AICI ---
-        // Folosim selectorul corect, fie ID-ul '#terminal', fie clasa '.terminal-container'
-        const terminalContainer = document.getElementById('terminal'); 
-        if (terminalContainer) {
-            terminalContainer.addEventListener('click', () => {
-                if(this.input) this.input.focus();
-            });
-        }
+        this.pid = pid;
+        this.shell = null; // Va fi conectat mai târziu
+
+        // Căutăm elementele relativ la 'rootElement'
+        this.output = rootElement.querySelector('#terminal-output');
+        this.inputLine = rootElement.querySelector('#current-line');
+        this.input = rootElement.querySelector('#terminal-input');
+        this.promptElement = rootElement.querySelector('#prompt');
+        this.terminalContainer = rootElement.querySelector('#terminal');
         
-        eventBus.on('terminal.write', (data) => this.write(data));
-        eventBus.on('terminal.clear', () => this.clear());
-        eventBus.on('terminal.set_input', ({ value }) => this.setInput(value));
-        eventBus.on('terminal.prompt', ({ cwd }) => this.showPrompt(cwd));
+        this.input.addEventListener('keydown', this._handleKeyDown.bind(this));
+        this.terminalContainer.addEventListener('click', () => this.input.focus());
 
-        eventBus.on('terminal.set_theme', ({ theme }) => {
-            const allThemeClasses = [
-                'nord-theme',
-                'dracula-theme',
-                'solarized-light-theme',
-                'neon-blade-theme',
-                'matrix-green-theme',
-                'true-dark-theme'
-            ];
-            document.body.classList.remove(...allThemeClasses);
+        // --- Listeneri de evenimente ---
+        // Fiecare terminal ascultă evenimente de scriere targetate specific pentru el
+        eventBus.on(`terminal.write.${this.pid}`, (data) => this.write(data));
+        
+        // Comanda 'theme' emite un eveniment global, pe care toate terminalele îl pot asculta
+        // Deoarece tema se aplică pe <body>, este OK ca toate să reacționeze.
+        eventBus.on('terminal.set_theme', (data) => this.setTheme(data));
+        
+        this.input.focus();
+    }
 
-            // Adăugăm clasa corespunzătoare, dacă nu este tema implicită 'light'.
-            if (theme === 'nord') {
-                document.body.classList.add('nord-theme');
-            } else if (theme === 'dracula') {
-                document.body.classList.add('dracula-theme');
-            } else if (theme === 'solarized-light') {
-                document.body.classList.add('solarized-light-theme');
-            } else if (theme === 'neon-blade') {
-                document.body.classList.add('neon-blade-theme');
-            } else if (theme === 'matrix-green') {
-                document.body.classList.add('matrix-green-theme');
-            } else if (theme === 'true-dark') {
-                document.body.classList.add('true-dark-theme');
-            }
-            // Pentru tema 'light', nu se adaugă nicio clasă specială.
-        });
-
-        if(this.input) this.input.focus();
-    },
+    connectShell(shellInstance) {
+        this.shell = shellInstance;
+    }
 
     clear() {
-        if(this.output) this.output.innerHTML = '';
-    },
+        if (this.output) this.output.innerHTML = '';
+    }
     
     write({ message, isError = false, isHtml = false }) {
         if (!this.output) return;
         const line = document.createElement('div');
         line.classList.add('terminal-line');
-        if (isError) {
-            line.classList.add('error');
-        }
+        if (isError) line.classList.add('error');
         
-        if(isHtml) {
+        if (isHtml) {
             line.innerHTML = message;
         } else {
-            // Prevenim redarea HTML-ului dacă nu este specificat, pentru securitate
             line.textContent = message;
         }
 
         this.output.appendChild(line);
         this.output.scrollTop = this.output.scrollHeight;
-    },
+    }
 
     setInput(value) {
-        if(this.input) {
+        if (this.input) {
             this.input.value = value;
             this.input.focus();
         }
-    },
+    }
 
     showPrompt(cwd) {
-        if(this.promptElement) this.promptElement.textContent = `user@webos:${cwd}$`;
-        if(this.inputLine) this.inputLine.style.visibility = 'visible';
-        if(this.input) this.input.focus();
-        if(this.output) this.output.scrollTop = this.output.scrollHeight;
-    },
+        if (this.promptElement) this.promptElement.textContent = `user@webos:${cwd}$`;
+        if (this.inputLine) this.inputLine.style.visibility = 'visible';
+        this.input.focus();
+        this.output.scrollTop = this.output.scrollHeight;
+    }
 
     _handleKeyDown(e) {
-        if (!this.input) return;
-        const value = this.input.value; // Trim se face în shell
+        if (!this.input || !this.shell) return;
+        const value = this.input.value;
 
         switch (e.key) {
             case 'Enter':
                 this.write({ message: `${this.promptElement.textContent} ${value}` });
-                eventBus.emit('shell.input', { value });
+                this.shell.handleInput(value);
                 this.input.value = '';
                 if(this.inputLine) this.inputLine.style.visibility = 'hidden';
                 break;
             
             case 'ArrowUp':
                 e.preventDefault();
-                eventBus.emit('shell.history.prev');
+                this.shell.handlePrevHistory();
                 break;
 
             case 'ArrowDown':
                 e.preventDefault();
-                eventBus.emit('shell.history.next');
+                this.shell.handleNextHistory();
                 break;
 
             case 'Tab':
                 e.preventDefault();
-                eventBus.emit('shell.autocomplete', { value: this.input.value });
+                this.shell.handleAutocomplete(this.input.value);
                 break;
         }
     }
-};
+
+    // ==========================================================
+    // AICI ESTE FUNCȚIA REPARATĂ, MUTATĂ ÎN INTERIORUL CLASEI
+    // ==========================================================
+    setTheme({ theme }) {
+        const allThemeClasses = [
+            'nord-theme',
+            'dracula-theme',
+            'solarized-light-theme',
+            'neon-blade-theme',
+            'matrix-green-theme',
+            'true-dark-theme'
+        ];
+        document.body.classList.remove(...allThemeClasses);
+        
+        // Adăugăm clasa corespunzătoare, dacă nu este tema implicită 'light'.
+        if (theme !== 'light' && allThemeClasses.includes(`${theme}-theme`)) {
+             document.body.classList.add(`${theme}-theme`);
+        }
+    }
+} // <-- ACOLADA DE ÎNCHIDERE A CLASEI ESTE ACUM LA LOCUL CORECT

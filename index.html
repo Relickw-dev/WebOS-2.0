@@ -8,29 +8,26 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        #open-terminal-btn {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            padding: 8px 12px;
+            font-family: 'JetBrains Mono', monospace;
+            cursor: pointer;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+    </style>
 </head>
 <body>
-    <div class="glow-container">
-        <main id="container" tabindex="0">
-            <div class="terminal-header">
-                <div class="title"><span class="title-icon"></span>SOLUS :: TERMINAL</div>
-                <div class="buttons">
-                    <span class="btn minimize"></span>
-                    <span class="btn maximize"></span>
-                    <span class="btn close"></span>
-                </div>
-            </div>
+    <button id="open-terminal-btn">Open New Terminal</button>
 
-            <div id="terminal">
-                <div id="terminal-output"></div>
-                <div id="current-line" class="prompt-line">
-                    <span id="prompt"></span>
-                    <input type="text" id="terminal-input" autocomplete="off" spellcheck="false" />
-                    <span class="caret"></span>
-                </div>
-            </div>
-        </main>
-    </div>
+    <div id="desktop"></div>
+
     <script type="module" src="./js/main.js"></script>
 </body>
 </html>

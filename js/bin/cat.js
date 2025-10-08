@@ -1,33 +1,10 @@
-// File: js/bin/cat.js
+// File: js/bin/cat.js (Versiune CORECTATĂ și simplificată)
 
-// Modificare 1: Funcția devine un generator asincron (async function*)
 export async function* logic({ args, cwd, stdin, syscall }) {
-
-    // Funcția internă rămâne un generator sincron, deoarece nu face operații asincrone
-    function* processAndYield(content) {
-        if (typeof content !== 'string') return;
-        
-        const lines = content.split('\n');
-
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            
-            // Nu afișăm ultima linie goală dacă fișierul se termină cu newline
-            if (i === lines.length - 1 && line === '') {
-                continue;
-            }
-
-            // Yield pentru stdout rămâne la fel
-            yield {
-                type: 'stdout',
-                data: { type: 'string', message: line }
-            };
-        }
-    }
-
-    // Cazul 1: Se primește input prin pipe (stdin)
+    // Cazul 1: Se primește input prin pipe (stdin) și nu sunt alte argumente
     if (stdin && args.length === 0) {
-        yield* processAndYield(stdin);
+        // Trimitem direct conținutul stdin la output
+        yield { type: 'stdout', data: { message: stdin } };
         return;
     }
 
@@ -42,23 +19,23 @@ export async function* logic({ args, cwd, stdin, syscall }) {
 
     // Cazul 3: Se citesc unul sau mai multe fișiere
     for (const relativePath of args) { 
-         try { 
-            // --- MODIFICAREA MINIMĂ ESTE AICI ---
-            // Verificăm dacă calea este deja absolută. Dacă nu, o combinăm cu 'cwd'.
-            const absolutePath = relativePath.startsWith('/') 
+        try { 
+            // Rezolvăm calea pentru a fi absolută. Logica ta era corectă.
+            const path = relativePath.startsWith('/') 
                 ? relativePath 
-                : `${cwd}/${relativePath}`.replace(/\/+/g, '/'); // Normalizează calea (ex: // -> /)
+                : `${cwd === '/' ? '' : cwd}/${relativePath}`;
 
-             // Acum folosim calea absolută în apelul de sistem.
-            // Am eliminat 'cwd' din apel, deoarece nu mai este necesar.
-             const content = await syscall('vfs.readFile', { path: absolutePath }); 
-             
-             yield* processAndYield(content); 
-         } catch (e) { 
-             yield {  
-                 type: 'stdout',  
-                 data: { message: `cat: ${relativePath}: ${e.message}`, isError: true }  
-             }; 
-         } 
-     } 
+            const content = await syscall('vfs.readFile', { path });
+            
+            // Trimitem tot conținutul fișierului dintr-o singură bucată.
+            // Terminalul va afișa corect liniile multiple.
+            yield { type: 'stdout', data: { message: content } };
+            
+        } catch (e) { 
+            yield { 
+                type: 'stdout', 
+                data: { message: `cat: ${relativePath}: ${e.message}`, isError: true } 
+            }; 
+        } 
+    } 
 }
