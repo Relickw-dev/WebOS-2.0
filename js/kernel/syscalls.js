@@ -69,11 +69,6 @@ export const syscalls = {
     },
 
     // --- Process Syscalls ---
-    'proc.list': () => {
-        return new Promise((resolve, reject) => {
-            eventBus.emit('proc.list', { resolve, reject });
-        });
-    },
     'proc.sleep': async ({ ms }) => {
         return new Promise(resolve => setTimeout(resolve, ms));
     },

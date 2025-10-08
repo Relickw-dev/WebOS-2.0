@@ -1,81 +1,80 @@
 // File: js/kernel/worker-process.js
 
-let procInfo, cwd, pid;
-let syscallId = 0;
-const pendingSyscalls = new Map();
+let callIdCounter = 0;
+const syscallPromises = new Map();
 
-// Funcția 'syscall' pentru contextul worker-ului
-function syscall(name, params = {}) {
+// 1. Funcția 'syscall' din interiorul worker-ului
+function syscall(name, params) {
     return new Promise((resolve, reject) => {
-        const callId = syscallId++;
-        pendingSyscalls.set(callId, { resolve, reject });
-        // Trimite cererea de syscall către kernel (main thread)
-        self.postMessage({ type: 'syscall', payload: { name, params, callId } });
+        const callId = callIdCounter++;
+        syscallPromises.set(callId, { resolve, reject });
+        postMessage({
+            type: 'syscall',
+            payload: { name, params, callId }
+        });
     });
 }
 
-// Handler pentru mesajele primite de la kernel
+// 2. Gestionarea mesajelor de la kernel (firul principal)
 self.onmessage = async (e) => {
     const { type, payload } = e.data;
 
-    if (type === 'init') {
-        // Inițializăm procesul la primirea datelor de la kernel
-        procInfo = payload.procInfo;
-        cwd = payload.cwd;
-        pid = payload.pid;
-        await run();
-    } else if (type === 'syscall_result') {
-        // Am primit rezultatul unui syscall
-        const { result, callId } = payload;
-        if (pendingSyscalls.has(callId)) {
-            pendingSyscalls.get(callId).resolve(result);
-            pendingSyscalls.delete(callId);
+    switch (type) {
+        // Când primim rezultatul unui syscall
+        case 'syscall_result': {
+            const { result, callId } = payload;
+            if (syscallPromises.has(callId)) {
+                syscallPromises.get(callId).resolve(result);
+                syscallPromises.delete(callId);
+            }
+            break;
         }
-    } else if (type === 'syscall_error') {
-        // Am primit o eroare de la un syscall
-        const { error, callId } = payload;
-        if (pendingSyscalls.has(callId)) {
-            pendingSyscalls.get(callId).reject(new Error(error));
-            pendingSyscalls.delete(callId);
+
+        // Când primim o eroare de la un syscall
+        case 'syscall_error': {
+            const { error, callId } = payload;
+            if (syscallPromises.has(callId)) {
+                syscallPromises.get(callId).reject(new Error(error));
+                syscallPromises.delete(callId);
+            }
+            break;
+        }
+
+        // Când worker-ul este inițializat de kernel
+        case 'init': {
+            const { procInfo, cwd, stdin } = payload; // --- MODIFICARE CHEIE AICI ---
+            try {
+                // Importăm dinamic codul comenzii (ex: /js/bin/grep.js)
+                const module = await import(`/js/bin/${procInfo.name}.js`);
+                if (!module.logic || typeof module.logic !== 'function') {
+                    throw new Error(`Command '${procInfo.name}' does not have a valid 'logic' function.`);
+                }
+
+                // Creăm un obiect cu toți parametrii necesari pentru funcția 'logic'
+                const logicParams = {
+                    args: procInfo.args,
+                    cwd,
+                    stdin, // --- MODIFICARE CHEIE AICI: Includem stdin-ul primit ---
+                    syscall // Pasăm funcția noastră 'syscall'
+                };
+
+                // Executăm funcția generator 'logic'
+                for await (const result of module.logic(logicParams)) {
+                    if (result.type === 'stdout') {
+                        postMessage({ type: 'stdout', payload: { data: result.data } });
+                    }
+                }
+
+                // Dacă generatorul se termină fără erori, trimitem codul de ieșire 0 (succes).
+                postMessage({ type: 'exit', payload: { exitCode: 0 } });
+
+            } catch (error) {
+                // Trimitem eroarea la kernel pentru a fi afișată în terminal
+                postMessage({ type: 'error', payload: { message: error.message } });
+                // Și încheiem procesul cu un cod de eroare.
+                postMessage({ type: 'exit', payload: { exitCode: 1 } });
+            }
+            break;
         }
     }
 };
-
-// Funcția principală care rulează logica procesului
-async function run() {
-    try {
-        const module = await import(`/js/bin/${procInfo.name}.js`);
-        if (typeof module.logic !== 'function') {
-             throw new Error(`Command '${procInfo.name}' logic is not a valid function.`);
-        }
-        
-        // Injectăm funcția 'syscall' în contextul pe care îl va primi procesul
-        const context = {
-            args: procInfo.args,
-            cwd,
-            stdin: procInfo.stdin || null,
-            syscall
-        };
-
-        // Rulăm logica procesului
-        const iterator = module.logic(context);
-
-        let result = await iterator.next();
-        while (!result.done) {
-            const value = result.value;
-
-            // Procesele acum fac 'yield' pe obiecte simple, nu pe syscall-uri
-            if (value && value.type === 'stdout') {
-                self.postMessage({ type: 'stdout', payload: { data: value.data } });
-            }
-            
-            result = await iterator.next();
-        }
-
-        self.postMessage({ type: 'exit', payload: { exitCode: 0 } });
-
-    } catch (e) {
-        self.postMessage({ type: 'error', payload: { message: e.message } });
-        self.postMessage({ type: 'exit', payload: { exitCode: 1 } });
-    }
-}

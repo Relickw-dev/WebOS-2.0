@@ -1,7 +1,6 @@
 // File: js/shell/shell.js
 import { eventBus } from '../eventBus.js';
 import { logger } from '../utils/logger.js';
-// MODIFICARE: Importăm funcția syscall specifică pentru main-thread
 import { syscall } from '../kernel/syscalls.js';
 
 let currentDirectory = '/';
@@ -9,51 +8,33 @@ const commandHistory = [];
 let historyIndex = 0;
 
 function displayWelcomeMessage() {
-    // MODIFICARE: Am adăugat un welcome art simplu
     const welcomeArt = ``;
     const welcomeMessage = `Welcome to WebOS 2.0. Type 'help' for a list of available commands.`;
-    
     syscall('terminal.write', { message: welcomeArt });
     syscall('terminal.write', { message: welcomeMessage });
 }
 
 function resolvePath(basePath, newPath) {
     if (!newPath) return basePath;
-    if (newPath.startsWith('/')) {
-        return newPath;
-    }
-
+    if (newPath.startsWith('/')) return newPath;
     const baseParts = basePath.split('/').filter(p => p.length > 0);
     const newParts = newPath.split('/');
-    
     for (const part of newParts) {
-        if (part === '..') {
-            baseParts.pop();
-        } else if (part !== '.' && part !== '') {
-            baseParts.push(part);
-        }
+        if (part === '..') baseParts.pop();
+        else if (part !== '.' && part !== '') baseParts.push(part);
     }
-
     return '/' + baseParts.join('/');
 }
 
 export const shell = {
     init: () => {
-        eventBus.on('kernel.boot_complete', () => {
-            // Logica ta originală pentru focus și prompt
-        });
-        
-        // Listener-ele de evenimente definite de tine
         eventBus.on('shell.input', handleInput);
         eventBus.on('shell.history.prev', handlePrevHistory);
         eventBus.on('shell.history.next', handleNextHistory);
         eventBus.on('shell.autocomplete', handleAutocomplete);
-
-        // Listener-ul pentru noul syscall 'shell.get_history'
         eventBus.on('syscall.shell.get_history', ({ resolve }) => {
             resolve(commandHistory);
         });
-
         logger.info('Shell: Initialized.');
         displayWelcomeMessage(); 
         updatePrompt();
@@ -61,7 +42,6 @@ export const shell = {
 };
 
 function updatePrompt() {
-    // În noua arhitectură, terminalul gestionează prompt-ul direct prin event
     eventBus.emit('terminal.prompt', { cwd: currentDirectory });
 }
 
@@ -100,6 +80,8 @@ function parsePipeline(fullCommand) {
 
         const [name, ...args] = parseCommand(commandStr);
 
+        if (!name) continue; // Ignoră comenzile goale (ex: `cat file | | grep a`)
+
         pipeline.push({
             name,
             args,
@@ -109,6 +91,7 @@ function parsePipeline(fullCommand) {
         });
     }
 
+    // Setează stdout-ul la 'pipe' pentru toate comenzile, cu excepția ultimei
     for (let i = 0; i < pipeline.length - 1; i++) {
         pipeline[i].stdout = 'pipe';
     }
@@ -123,19 +106,14 @@ async function handleInput({ value }) {
         commandHistory.push(commandString);
         historyIndex = commandHistory.length;
 
-        const [commandName] = commandString.split(' ');
+        const [commandName] = parseCommand(commandString);
         
         if (commandName === 'cd') {
-            const [, ...args] = parseCommand(commandString);
-            const targetPath = args[0] || '/';
+            const [, targetPath = '/'] = parseCommand(commandString);
             const resolvedPath = resolvePath(currentDirectory, targetPath);
-            
             try {
-                const stat = await syscall('vfs.stat', { path: resolvedPath, cwd: currentDirectory });
-                
-                // --- MODIFICAREA ESTE AICI ---
-                // Am schimbat 'dir' în 'directory' pentru a corespunde cu ce returnează API-ul.
-                if (stat.type !== 'directory') { 
+                const stat = await syscall('vfs.stat', { path: resolvedPath });
+                if (stat.type !== 'directory') {
                     syscall('terminal.write', { message: `cd: not a directory: ${targetPath}`, isError: true });
                 } else {
                     currentDirectory = resolvedPath;
@@ -157,6 +135,7 @@ async function handleInput({ value }) {
         
         eventBus.emit('proc.exec', {
             pipeline,
+            // Asigurăm că `data` este un obiect, așa cum se așteaptă terminalul.
             onOutput: (data) => syscall('terminal.write', data),
             onExit: () => updatePrompt(),
             cwd: currentDirectory
@@ -174,38 +153,55 @@ function handlePrevHistory() {
 }
 
 function handleNextHistory() {
-    if (historyIndex < commandHistory.length - 1) {
+    if (historyIndex < commandHistory.length) {
+        const value = commandHistory[historyIndex] || '';
+        eventBus.emit('terminal.set_input', { value });
         historyIndex++;
-        eventBus.emit('terminal.set_input', { value: commandHistory[historyIndex] });
     } else {
         historyIndex = commandHistory.length;
         eventBus.emit('terminal.set_input', { value: '' });
     }
 }
 
+
 async function handleAutocomplete({ value }) {
     const parts = value.split(' ');
+    // 'toComplete' este ultimul cuvânt de pe linie, cel pe care încercăm să-l completăm.
     const toComplete = parts[parts.length - 1];
-
     if (!toComplete) return;
 
     try {
+        // 1. Apelăm syscall-ul pentru a citi conținutul directorului curent.
+        //    'await' asigură că așteptăm răspunsul de la sistemul de fișiere.
         const entries = await syscall('vfs.readDir', { path: currentDirectory });
+
+        // 2. Filtrăm intrările pentru a găsi cele care încep cu textul de completat.
         const matches = entries.filter(entry => entry.name.toLowerCase().startsWith(toComplete.toLowerCase()));
 
+        // 3. Cazul 1: O singură potrivire. Completăm automat.
         if (matches.length === 1) {
             let completedName = matches[0].name;
-            if (matches[0].type === 'dir') {
-                completedName += '/';
-            }
+            // Adăugăm '/' la final dacă este un director, pentru ușurință în navigare.
+            if (matches[0].type === 'dir' || matches[0].type === 'directory') completedName += '/';
+            
             parts[parts.length - 1] = completedName;
-            const newValue = parts.join(' ');
-            eventBus.emit('terminal.set_input', { value: newValue });
-        } else if (matches.length > 1) {
+            
+            // Emitem un eveniment pentru ca terminal.js să actualizeze input-ul.
+            eventBus.emit('terminal.set_input', { value: parts.join(' ') });
+        } 
+        // 4. Cazul 2: Mai multe potriviri. Le afișăm pe toate.
+        else if (matches.length > 1) {
             const names = matches.map(m => m.name).join('   ');
-            syscall('terminal.write', { message: `\n${names}` });
+            
+            // --- MODIFICARE AICI ---
+            // Folosim 'await' pentru a ne asigura că numele sunt scrise înainte de a redesena prompt-ul.
+            await syscall('terminal.write', { message: `\n${names}` });
+            
+            // Redesenăm prompt-ul pe linia următoare.
             updatePrompt();
         }
+        // Dacă nu există potriviri (matches.length === 0), nu facem nimic.
+
     } catch (e) {
         logger.error(`Autocomplete failed: ${e.message}`);
     }

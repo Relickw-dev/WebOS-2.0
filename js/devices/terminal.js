@@ -27,6 +27,34 @@ export const terminal = {
         eventBus.on('terminal.set_input', ({ value }) => this.setInput(value));
         eventBus.on('terminal.prompt', ({ cwd }) => this.showPrompt(cwd));
 
+        eventBus.on('terminal.set_theme', ({ theme }) => {
+            const allThemeClasses = [
+                'nord-theme',
+                'dracula-theme',
+                'solarized-light-theme',
+                'neon-blade-theme',
+                'matrix-green-theme',
+                'true-dark-theme'
+            ];
+            document.body.classList.remove(...allThemeClasses);
+
+            // Adăugăm clasa corespunzătoare, dacă nu este tema implicită 'light'.
+            if (theme === 'nord') {
+                document.body.classList.add('nord-theme');
+            } else if (theme === 'dracula') {
+                document.body.classList.add('dracula-theme');
+            } else if (theme === 'solarized-light') {
+                document.body.classList.add('solarized-light-theme');
+            } else if (theme === 'neon-blade') {
+                document.body.classList.add('neon-blade-theme');
+            } else if (theme === 'matrix-green') {
+                document.body.classList.add('matrix-green-theme');
+            } else if (theme === 'true-dark') {
+                document.body.classList.add('true-dark-theme');
+            }
+            // Pentru tema 'light', nu se adaugă nicio clasă specială.
+        });
+
         if(this.input) this.input.focus();
     },
 
