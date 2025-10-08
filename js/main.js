@@ -18,7 +18,7 @@ async function startWebOS() {
     await kernel.init();
 
     // Inițializare shell
-    shell.init();
+    await shell.init();
 
     console.log('WebOS: Boot completed.');
 }

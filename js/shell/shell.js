@@ -6,6 +6,24 @@ import { syscall } from '../kernel/syscalls.js';
 let currentDirectory = '/';
 const commandHistory = [];
 let historyIndex = 0;
+let availableCommands = [];
+
+async function fetchCommands() {
+    try {
+        const response = await fetch('http://localhost:3000/api/commands');
+        if (!response.ok) {
+            throw new Error(`HTTP Error: ${response.status}`);
+        }
+        const commandsFromServer = await response.json();
+        // Combinăm comenzile de pe server cu cele interne
+        availableCommands = [...commandsFromServer, 'cd', 'clear'];
+        logger.info(`Shell: Successfully loaded ${availableCommands.length} commands.`);
+    } catch (error) {
+        logger.error(`Failed to fetch commands: ${error.message}. Falling back to a predefined list.`);
+        // Listă de rezervă în caz că serverul nu răspunde corect
+        availableCommands = ['cat', 'cd', 'clear', 'cp', 'date', 'echo', 'grep', 'head', 'help', 'history', 'kill', 'ls', 'mkdir', 'mv', 'ps', 'pwd', 'rm', 'sleep', 'stat', 'theme', 'touch', 'wc'];
+    }
+}
 
 function displayWelcomeMessage() {
     const welcomeArt = ``;
@@ -27,7 +45,8 @@ function resolvePath(basePath, newPath) {
 }
 
 export const shell = {
-    init: () => {
+    init: async () => {
+        fetchCommands();
         eventBus.on('shell.input', handleInput);
         eventBus.on('shell.history.prev', handlePrevHistory);
         eventBus.on('shell.history.next', handleNextHistory);
@@ -166,43 +185,43 @@ function handleNextHistory() {
 
 async function handleAutocomplete({ value }) {
     const parts = value.split(' ');
-    // 'toComplete' este ultimul cuvânt de pe linie, cel pe care încercăm să-l completăm.
+    const isCompletingCommand = parts.length === 1 && !value.endsWith(' ');
     const toComplete = parts[parts.length - 1];
-    if (!toComplete) return;
 
-    try {
-        // 1. Apelăm syscall-ul pentru a citi conținutul directorului curent.
-        //    'await' asigură că așteptăm răspunsul de la sistemul de fișiere.
-        const entries = await syscall('vfs.readDir', { path: currentDirectory });
-
-        // 2. Filtrăm intrările pentru a găsi cele care încep cu textul de completat.
-        const matches = entries.filter(entry => entry.name.toLowerCase().startsWith(toComplete.toLowerCase()));
-
-        // 3. Cazul 1: O singură potrivire. Completăm automat.
+    if (isCompletingCommand) {
+        // --- LOGICĂ PENTRU COMENZI (ACUM SINCRONIZATĂ) ---
+        const matches = availableCommands.filter(name => name.toLowerCase().startsWith(toComplete.toLowerCase()));
         if (matches.length === 1) {
-            let completedName = matches[0].name;
-            // Adăugăm '/' la final dacă este un director, pentru ușurință în navigare.
-            if (matches[0].type === 'dir' || matches[0].type === 'directory') completedName += '/';
-            
-            parts[parts.length - 1] = completedName;
-            
-            // Emitem un eveniment pentru ca terminal.js să actualizeze input-ul.
-            eventBus.emit('terminal.set_input', { value: parts.join(' ') });
-        } 
-        // 4. Cazul 2: Mai multe potriviri. Le afișăm pe toate.
-        else if (matches.length > 1) {
-            const names = matches.map(m => m.name).join('   ');
-            
-            // --- MODIFICARE AICI ---
-            // Folosim 'await' pentru a ne asigura că numele sunt scrise înainte de a redesena prompt-ul.
-            await syscall('terminal.write', { message: `\n${names}` });
-            
-            // Redesenăm prompt-ul pe linia următoare.
-            updatePrompt();
+            const newValue = matches[0] + ' ';
+            eventBus.emit('terminal.set_input', { value: newValue });
         }
-        // Dacă nu există potriviri (matches.length === 0), nu facem nimic.
-
-    } catch (e) {
-        logger.error(`Autocomplete failed: ${e.message}`);
+    } else {
+        // --- LOGICĂ PENTRU CĂI (NESCHIMBATĂ) ---
+        let searchPath = currentDirectory;
+        let prefix = toComplete;
+        let basePath = '';
+        const lastSlashIndex = toComplete.lastIndexOf('/');
+        if (lastSlashIndex !== -1) {
+            basePath = toComplete.substring(0, lastSlashIndex + 1);
+            prefix = toComplete.substring(lastSlashIndex + 1);
+            searchPath = resolvePath(currentDirectory, basePath);
+        }
+        try {
+            const entries = await syscall('vfs.readDir', { path: searchPath });
+            const matches = entries.filter(entry => 
+                entry.name.toLowerCase().startsWith(prefix.toLowerCase())
+            );
+            if (matches.length === 1) {
+                let completedName = matches[0].name;
+                if (matches[0].type === 'dir') {
+                    completedName += '/';
+                }
+                parts[parts.length - 1] = basePath + completedName;
+                const newValue = parts.join(' ');
+                eventBus.emit('terminal.set_input', { value: newValue });
+            }
+        } catch (e) {
+            // Ignorăm erorile în mod silențios
+        }
     }
 }
