@@ -2,7 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs/promises');
+const fs = require('fs/promises'); // Corect, folosim varianta cu promises
 const vfsApi = require('./api/vfs');
 
 const app = express();
@@ -12,26 +12,26 @@ const virtualRoot = path.join(__dirname, '..', 'fs_root');
 app.use(cors());
 app.use(express.json());
 app.use('/api/vfs', vfsApi);
-app.get('/api/commands', (req, res) => {
-    // Construim calea absolută către directorul cu comenzi
+
+// --- MODIFICARE CHEIE: Am transformat în funcție async și am folosit await ---
+app.get('/api/commands', async (req, res) => {
     const binPath = path.join(__dirname, '..', 'js', 'bin');
-
-    fs.readdir(binPath, (err, files) => {
-        if (err) {
-            console.error('Eroare la citirea directorului js/bin:', err);
-            return res.status(500).json({ error: 'Nu s-au putut prelua comenzile.' });
-        }
-
-        // Filtrăm fișierele .js și eliminăm extensia
+    
+    try {
+        const files = await fs.readdir(binPath);
+        
         const commandNames = files
             .filter(file => file.endsWith('.js'))
-            .map(file => file.slice(0, -3)); // Ex: 'ls.js' -> 'ls'
+            .map(file => file.slice(0, -3));
 
-        // Trimitem lista ca răspuns JSON
         res.json(commandNames);
-    });
+    } catch (err) {
+        console.error('Eroare la citirea directorului js/bin:', err);
+        res.status(500).json({ error: 'Nu s-au putut prelua comenzile.' });
+    }
 });
-app.use(express.static(path.join(__dirname, '..', 'public'))); // presupunem că fișierele frontend sunt în 'public'
+
+app.use(express.static(path.join(__dirname, '..'))); // Servim direct din rădăcina proiectului
 
 async function start() {
   await fs.mkdir(virtualRoot, { recursive: true });

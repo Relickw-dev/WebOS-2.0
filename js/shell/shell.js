@@ -8,6 +8,15 @@ const commandHistory = [];
 let historyIndex = 0;
 let availableCommands = [];
 
+let autocompleteSession = {
+    lastCompletedValue: null, // Ultima valoare setată de autocompletare
+    matches: [],
+    currentIndex: 0,
+    contextType: null,
+    prefix: '', // Tot ce e înainte de segmentul curent (ex: 'cmd | ')
+    baseSegment: '' // Segmentul original pe care se face completarea
+};
+
 async function fetchCommands() {
     try {
         const response = await fetch('http://localhost:3000/api/commands');
@@ -15,20 +24,23 @@ async function fetchCommands() {
             throw new Error(`HTTP Error: ${response.status}`);
         }
         const commandsFromServer = await response.json();
-        // Combinăm comenzile de pe server cu cele interne
-        availableCommands = [...commandsFromServer, 'cd', 'clear'];
+        availableCommands = [...new Set([...commandsFromServer, 'cd', 'clear'])];
         logger.info(`Shell: Successfully loaded ${availableCommands.length} commands.`);
     } catch (error) {
         logger.error(`Failed to fetch commands: ${error.message}. Falling back to a predefined list.`);
-        // Listă de rezervă în caz că serverul nu răspunde corect
         availableCommands = ['cat', 'cd', 'clear', 'cp', 'date', 'echo', 'grep', 'head', 'help', 'history', 'kill', 'ls', 'mkdir', 'mv', 'ps', 'pwd', 'rm', 'sleep', 'stat', 'theme', 'touch', 'wc'];
     }
 }
 
 function displayWelcomeMessage() {
-    const welcomeArt = ``;
-    const welcomeMessage = `Welcome to WebOS 2.0. Type 'help' for a list of available commands.`;
-    syscall('terminal.write', { message: welcomeArt });
+    // Am eliminat complet ASCII art-ul pentru un aspect curat.
+    const welcomeMessage = `Solus [Version 1.0]
+An open-source project.
+
+Type 'help' for a list of available commands.
+`;
+
+    // Se folosește un singur apel pentru a afișa tot mesajul.
     syscall('terminal.write', { message: welcomeMessage });
 }
 
@@ -46,7 +58,7 @@ function resolvePath(basePath, newPath) {
 
 export const shell = {
     init: async () => {
-        fetchCommands();
+        await fetchCommands();
         eventBus.on('shell.input', handleInput);
         eventBus.on('shell.history.prev', handlePrevHistory);
         eventBus.on('shell.history.next', handleNextHistory);
@@ -184,44 +196,93 @@ function handleNextHistory() {
 
 
 async function handleAutocomplete({ value }) {
-    const parts = value.split(' ');
-    const isCompletingCommand = parts.length === 1 && !value.endsWith(' ');
-    const toComplete = parts[parts.length - 1];
+    // O nouă căutare este necesară dacă utilizatorul a modificat manual textul.
+    // Altfel, se continuă ciclul prin rezultatele deja găsite.
+    const isNewSearch = value !== autocompleteSession.lastCompletedValue;
 
-    if (isCompletingCommand) {
-        // --- LOGICĂ PENTRU COMENZI (ACUM SINCRONIZATĂ) ---
-        const matches = availableCommands.filter(name => name.toLowerCase().startsWith(toComplete.toLowerCase()));
-        if (matches.length === 1) {
-            const newValue = matches[0] + ' ';
-            eventBus.emit('terminal.set_input', { value: newValue });
+    if (isNewSearch) {
+        autocompleteSession.currentIndex = 0;
+        
+        // --- 1. Izolarea segmentului curent (partea de după ultimul '|') ---
+        const lastPipeIndex = value.lastIndexOf('|');
+        const segment = (lastPipeIndex === -1) ? value : value.substring(lastPipeIndex + 1);
+
+        // --- 2. Determinarea corectă și robustă a contextului (command vs. argument) ---
+        const wordsInSegment = segment.trim().split(/\s+/).filter(p => p.length > 0);
+
+        if (wordsInSegment.length === 0) {
+            // Cazuri: "", "   ", "history | ", "history |   "
+            // Urmează să scriem o comandă.
+            autocompleteSession.contextType = 'command';
+        } else if (wordsInSegment.length === 1 && !value.endsWith(' ')) {
+            // Cazuri: "c", "ca", "history | gr"
+            // Încă scriem la prima comandă din segment.
+            autocompleteSession.contextType = 'command';
+        } else {
+            // Cazuri: "ls ", "ls u", "history | grep ", "history | grep u"
+            // Am terminat comanda și acum completăm un argument.
+            autocompleteSession.contextType = 'argument';
         }
-    } else {
-        // --- LOGICĂ PENTRU CĂI (NESCHIMBATĂ) ---
-        let searchPath = currentDirectory;
-        let prefix = toComplete;
-        let basePath = '';
-        const lastSlashIndex = toComplete.lastIndexOf('/');
-        if (lastSlashIndex !== -1) {
-            basePath = toComplete.substring(0, lastSlashIndex + 1);
-            prefix = toComplete.substring(lastSlashIndex + 1);
-            searchPath = resolvePath(currentDirectory, basePath);
-        }
-        try {
-            const entries = await syscall('vfs.readDir', { path: searchPath });
-            const matches = entries.filter(entry => 
-                entry.name.toLowerCase().startsWith(prefix.toLowerCase())
+        
+        // --- 3. Pregătirea pentru căutare ---
+        autocompleteSession.prefix = (lastPipeIndex === -1) ? '' : value.substring(0, lastPipeIndex + 1);
+        autocompleteSession.baseSegment = segment;
+        
+        const wordToComplete = segment.trimStart().split(/\s+/).pop() || '';
+
+        // --- 4. Căutarea potrivirilor în funcție de context ---
+        if (autocompleteSession.contextType === 'command') {
+            autocompleteSession.matches = availableCommands.filter(name =>
+                name.toLowerCase().startsWith(wordToComplete.toLowerCase())
             );
-            if (matches.length === 1) {
-                let completedName = matches[0].name;
-                if (matches[0].type === 'dir') {
-                    completedName += '/';
-                }
-                parts[parts.length - 1] = basePath + completedName;
-                const newValue = parts.join(' ');
-                eventBus.emit('terminal.set_input', { value: newValue });
+        } else { // contextType === 'argument'
+            let prefixPath = wordToComplete;
+            let basePath = '';
+            const lastSlashIndex = prefixPath.lastIndexOf('/');
+            if (lastSlashIndex !== -1) {
+                basePath = prefixPath.substring(0, lastSlashIndex + 1);
+                prefixPath = prefixPath.substring(lastSlashIndex + 1);
             }
-        } catch (e) {
-            // Ignorăm erorile în mod silențios
+            const searchPath = resolvePath(currentDirectory, basePath);
+            try {
+                const entries = await syscall('vfs.readDir', { path: searchPath });
+                autocompleteSession.matches = entries
+                    .filter(entry => entry.name.toLowerCase().startsWith(prefixPath.toLowerCase()))
+                    .map(entry => {
+                        let name = basePath + entry.name;
+                        if (entry.type === 'directory') name += '/';
+                        return name;
+                    });
+            } catch (e) {
+                autocompleteSession.matches = [];
+            }
         }
     }
+
+    if (autocompleteSession.matches.length === 0) {
+        autocompleteSession.lastCompletedValue = null;
+        return;
+    }
+
+    const currentMatch = autocompleteSession.matches[autocompleteSession.currentIndex];
+    
+    // --- 5. Reconstrucția corectă a valorii ---
+    const base = autocompleteSession.baseSegment;
+    let newValue;
+    
+    if (base.endsWith(' ')) {
+        // Dacă segmentul de bază se termina cu spațiu, adăugăm potrivirea.
+        newValue = autocompleteSession.prefix + base + currentMatch;
+    } else {
+        // Altfel, înlocuim ultimul cuvânt parțial.
+        const parts = base.split(/\s+/);
+        parts[parts.length - 1] = currentMatch;
+        newValue = autocompleteSession.prefix + parts.join(' ');
+    }
+    
+    eventBus.emit('terminal.set_input', { value: newValue });
+    
+    // Actualizăm starea pentru următorul ciclu
+    autocompleteSession.lastCompletedValue = newValue;
+    autocompleteSession.currentIndex = (autocompleteSession.currentIndex + 1) % autocompleteSession.matches.length;
 }
