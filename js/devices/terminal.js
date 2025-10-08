@@ -1,4 +1,4 @@
-// File: js/devices/terminal.js (Versiune CORECTATĂ)
+// File: js/devices/terminal.js (Corectat)
 import { eventBus } from '../eventBus.js';
 
 export class Terminal {
@@ -16,17 +16,22 @@ export class Terminal {
         this.inputLine = rootElement.querySelector('#current-line');
         this.input = rootElement.querySelector('#terminal-input');
         this.promptElement = rootElement.querySelector('#prompt');
-        this.terminalContainer = rootElement.querySelector('#terminal');
         
+        // --- AICI ESTE CORECTURA ---
+        // 'rootElement' este deja containerul principal al terminalului.
+        this.terminalContainer = rootElement; 
+        
+        // Verificare de siguranță pentru a preveni erorile
+        if (!this.output || !this.inputLine || !this.input || !this.promptElement) {
+            console.error(`[PID ${pid}] Terminal init failed: One or more essential child elements are missing.`);
+            return;
+        }
+
         this.input.addEventListener('keydown', this._handleKeyDown.bind(this));
         this.terminalContainer.addEventListener('click', () => this.input.focus());
 
         // --- Listeneri de evenimente ---
-        // Fiecare terminal ascultă evenimente de scriere targetate specific pentru el
         eventBus.on(`terminal.write.${this.pid}`, (data) => this.write(data));
-        
-        // Comanda 'theme' emite un eveniment global, pe care toate terminalele îl pot asculta
-        // Deoarece tema se aplică pe <body>, este OK ca toate să reacționeze.
         eventBus.on('terminal.set_theme', (data) => this.setTheme(data));
         
         this.input.focus();
@@ -98,10 +103,7 @@ export class Terminal {
                 break;
         }
     }
-
-    // ==========================================================
-    // AICI ESTE FUNCȚIA REPARATĂ, MUTATĂ ÎN INTERIORUL CLASEI
-    // ==========================================================
+    
     setTheme({ theme }) {
         const allThemeClasses = [
             'nord-theme',
@@ -113,9 +115,8 @@ export class Terminal {
         ];
         document.body.classList.remove(...allThemeClasses);
         
-        // Adăugăm clasa corespunzătoare, dacă nu este tema implicită 'light'.
         if (theme !== 'light' && allThemeClasses.includes(`${theme}-theme`)) {
              document.body.classList.add(`${theme}-theme`);
         }
     }
-} // <-- ACOLADA DE ÎNCHIDERE A CLASEI ESTE ACUM LA LOCUL CORECT
+}
