@@ -1,122 +1,201 @@
-// File: js/devices/terminal.js (Corectat)
+// File: js/devices/terminal.js
 import { eventBus } from '../eventBus.js';
+import { logger } from '../utils/logger.js';
 
+/**
+ * Gestionează interfața utilizator și evenimentele pentru o singură instanță de terminal.
+ * Independență completă de ID-uri statice și siguranță în runtime.
+ */
 export class Terminal {
-    constructor(pid, rootElement) {
-        if (!rootElement) {
-            console.error(`[PID ${pid}] Terminal init failed: root element must be provided.`);
-            return;
-        }
-
-        this.pid = pid;
-        this.shell = null; // Va fi conectat mai târziu
-
-        // Căutăm elementele relativ la 'rootElement'
-        this.output = rootElement.querySelector('#terminal-output');
-        this.inputLine = rootElement.querySelector('#current-line');
-        this.input = rootElement.querySelector('#terminal-input');
-        this.promptElement = rootElement.querySelector('#prompt');
-        
-        // --- AICI ESTE CORECTURA ---
-        // 'rootElement' este deja containerul principal al terminalului.
-        this.terminalContainer = rootElement; 
-        
-        // Verificare de siguranță pentru a preveni erorile
-        if (!this.output || !this.inputLine || !this.input || !this.promptElement) {
-            console.error(`[PID ${pid}] Terminal init failed: One or more essential child elements are missing.`);
-            return;
-        }
-
-        this.input.addEventListener('keydown', this._handleKeyDown.bind(this));
-        this.terminalContainer.addEventListener('click', () => this.input.focus());
-
-        // --- Listeneri de evenimente ---
-        eventBus.on(`terminal.write.${this.pid}`, (data) => this.write(data));
-        eventBus.on('terminal.set_theme', (data) => this.setTheme(data));
-        
-        this.input.focus();
+  /**
+   * @param {number} pid - Process ID-ul asociat cu această instanță de terminal.
+   * @param {HTMLElement} rootElement - Elementul DOM rădăcină al terminalului.
+   */
+  constructor(pid, rootElement) {
+    if (typeof pid !== 'number' || !Number.isFinite(pid)) {
+      throw new TypeError('Invalid PID provided to Terminal');
+    }
+    if (!rootElement || !(rootElement instanceof HTMLElement)) {
+      throw new TypeError(`[PID ${pid}] Terminal init failed: rootElement must be a valid HTMLElement.`);
     }
 
-    connectShell(shellInstance) {
-        this.shell = shellInstance;
+    this.pid = pid;
+    this.shell = null;
+    this.root = rootElement;
+
+    try {
+      this._setupDOM();
+      this._bindEvents();
+      this.input.focus();
+      logger.info(`[PID ${this.pid}] Terminal initialized successfully.`);
+    } catch (err) {
+      logger.error(`[PID ${this.pid}] Terminal init failed:`, err?.message || err);
+      throw err;
     }
+  }
 
-    clear() {
-        if (this.output) this.output.innerHTML = '';
+  /** Găsește și validează elementele DOM interne ale terminalului */
+  _setupDOM() {
+    this.output = this.root.querySelector('.terminal-output');
+    this.inputLine = this.root.querySelector('.prompt-line');
+    this.promptElement = this.root.querySelector('.prompt');
+    this.input = this.root.querySelector('.terminal-input');
+
+    if (!this.output || !this.inputLine || !this.promptElement || !this.input) {
+      throw new Error(
+        `[PID ${this.pid}] Terminal init failed: Missing required elements (.terminal-output, .prompt-line, .prompt, .terminal-input).`
+      );
     }
-    
-    write({ message, isError = false, isHtml = false }) {
-        if (!this.output) return;
-        const line = document.createElement('div');
-        line.classList.add('terminal-line');
-        if (isError) line.classList.add('error');
-        
-        if (isHtml) {
-            line.innerHTML = message;
-        } else {
-            line.textContent = message;
-        }
+  }
 
-        this.output.appendChild(line);
-        this.output.scrollTop = this.output.scrollHeight;
+  /** Leagă toate evenimentele necesare terminalului */
+  _bindEvents() {
+    try {
+      this._boundHandleKeyDown = this._handleKeyDown.bind(this);
+      this._boundFocusInput = () => this.input.focus();
+      this._boundWrite = (data) => this.write(data);
+      this._boundSetTheme = (data) => this.setTheme(data);
+
+      this.input.addEventListener('keydown', this._boundHandleKeyDown);
+      this.root.addEventListener('click', this._boundFocusInput);
+
+      eventBus.on(`terminal.write.${this.pid}`, this._boundWrite);
+      eventBus.on('terminal.set_theme', this._boundSetTheme);
+
+      logger.debug(`[PID ${this.pid}] Event listeners bound successfully.`);
+    } catch (err) {
+      logger.warn(`[PID ${this.pid}] Failed to bind event listeners:`, err?.message || err);
     }
+  }
 
-    setInput(value) {
-        if (this.input) {
-            this.input.value = value;
-            this.input.focus();
-        }
+  /** Curăță toate resursele și event listener-ele */
+  destroy() {
+    try {
+      this.input?.removeEventListener('keydown', this._boundHandleKeyDown);
+      this.root?.removeEventListener('click', this._boundFocusInput);
+
+      eventBus.off(`terminal.write.${this.pid}`, this._boundWrite);
+      eventBus.off('terminal.set_theme', this._boundSetTheme);
+
+      logger.info(`[PID ${this.pid}] Terminal instance destroyed and event listeners removed.`);
+    } catch (err) {
+      logger.warn(`[PID ${this.pid}] Terminal destroy() warning:`, err?.message || err);
     }
+  }
 
-    showPrompt(cwd) {
-        if (this.promptElement) this.promptElement.textContent = `user@webos:${cwd}$`;
-        if (this.inputLine) this.inputLine.style.visibility = 'visible';
-        this.input.focus();
-        this.output.scrollTop = this.output.scrollHeight;
+  /** Conectează shell-ul asociat */
+  connectShell(shellInstance) {
+    this.shell = shellInstance;
+    logger.debug(`[PID ${this.pid}] Shell connected.`);
+  }
+
+  /** Șterge complet conținutul terminalului */
+  clear() {
+    try {
+      this.output.innerHTML = '';
+      logger.debug(`[PID ${this.pid}] Terminal output cleared.`);
+    } catch (err) {
+      logger.warn(`[PID ${this.pid}] Failed to clear terminal output:`, err?.message || err);
     }
+  }
 
-    _handleKeyDown(e) {
-        if (!this.input || !this.shell) return;
-        const value = this.input.value;
+  /** Scrie o linie în terminal */
+  write({ message, isError = false, isHtml = false }) {
+    if (!message) return;
 
-        switch (e.key) {
-            case 'Enter':
-                this.write({ message: `${this.promptElement.textContent} ${value}` });
-                this.shell.handleInput(value);
-                this.input.value = '';
-                if(this.inputLine) this.inputLine.style.visibility = 'hidden';
-                break;
-            
-            case 'ArrowUp':
-                e.preventDefault();
-                this.shell.handlePrevHistory();
-                break;
+    try {
+      const line = document.createElement('div');
+      line.classList.add('terminal-line');
+      if (isError) line.classList.add('error');
 
-            case 'ArrowDown':
-                e.preventDefault();
-                this.shell.handleNextHistory();
-                break;
+      if (isHtml) line.innerHTML = message;
+      else line.textContent = message;
 
-            case 'Tab':
-                e.preventDefault();
-                this.shell.handleAutocomplete(this.input.value);
-                break;
-        }
+      this.output.appendChild(line);
+      this.output.scrollTop = this.output.scrollHeight;
+
+      logger.debug(`[PID ${this.pid}] Wrote message to terminal: "${message.slice(0, 80)}${message.length > 80 ? '...' : ''}"`);
+    } catch (err) {
+      logger.error(`[PID ${this.pid}] Failed to write to terminal:`, err?.message || err);
     }
-    
-    setTheme({ theme }) {
-        const allThemeClasses = [
-            'nord-theme',
-            'dracula-theme',
-            'solarized-light-theme',
-            'neon-blade-theme',
-            'matrix-green-theme',
-            'true-dark-theme'
-        ];
-        document.body.classList.remove(...allThemeClasses);
-        
-        if (theme !== 'light' && allThemeClasses.includes(`${theme}-theme`)) {
-             document.body.classList.add(`${theme}-theme`);
-        }
+  }
+
+  /** Setează inputul curent */
+  setInput(value) {
+    try {
+      this.input.value = value;
+      this.input.focus();
+      logger.debug(`[PID ${this.pid}] Input set to "${value}".`);
+    } catch (err) {
+      logger.warn(`[PID ${this.pid}] Failed to set input:`, err?.message || err);
     }
+  }
+
+  /** Afișează promptul și pregătește terminalul pentru input nou */
+  showPrompt(cwd) {
+    try {
+      this.promptElement.textContent = `user@webos:${cwd}$`;
+      this.inputLine.style.visibility = 'visible';
+      this.input.focus();
+      this.output.scrollTop = this.output.scrollHeight;
+      logger.debug(`[PID ${this.pid}] Prompt shown for cwd: ${cwd}`);
+    } catch (err) {
+      logger.warn(`[PID ${this.pid}] Failed to show prompt:`, err?.message || err);
+    }
+  }
+
+  /** Gestionarea tastelor din input */
+  _handleKeyDown(e) {
+    if (!this.shell) return;
+
+    const command = this.input.value;
+    try {
+      switch (e.key) {
+        case 'Enter':
+          this.write({ message: `${this.promptElement.textContent} ${command}` });
+          this.shell.handleInput(command);
+          this.input.value = '';
+          break;
+
+        case 'ArrowUp':
+          e.preventDefault();
+          this.shell.handlePrevHistory();
+          break;
+
+        case 'ArrowDown':
+          e.preventDefault();
+          this.shell.handleNextHistory();
+          break;
+
+        case 'Tab':
+          e.preventDefault();
+          this.shell.handleAutocomplete(command);
+          break;
+      }
+    } catch (err) {
+      logger.error(`[PID ${this.pid}] Error handling key "${e.key}":`, err?.message || err);
+    }
+  }
+
+  /** Schimbă tema vizuală */
+  setTheme({ theme }) {
+    try {
+      const validThemes = [
+        'nord-theme', 'dracula-theme', 'solarized-light-theme',
+        'neon-blade-theme', 'matrix-green-theme', 'true-dark-theme'
+      ];
+
+      document.body.classList.remove(...validThemes);
+
+      const themeClass = `${theme}-theme`;
+      if (validThemes.includes(themeClass)) {
+        document.body.classList.add(themeClass);
+        logger.debug(`[PID ${this.pid}] Theme applied: ${themeClass}`);
+      } else {
+        logger.warn(`[PID ${this.pid}] Unknown theme "${theme}". No changes applied.`);
+      }
+    } catch (err) {
+      logger.error(`[PID ${this.pid}] Failed to set theme:`, err?.message || err);
+    }
+  }
 }

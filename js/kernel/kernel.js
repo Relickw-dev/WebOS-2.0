@@ -1,4 +1,4 @@
-// File: js/kernel/kernel.js (Versiune finală, cu suport complet pentru 'kill')
+// File: js/kernel/kernel.js (Versiune Corectată)
 import { eventBus } from '../eventBus.js';
 import { syscalls } from './syscalls.js';
 import { logger } from '../utils/logger.js';
@@ -11,7 +11,11 @@ let nextPid = 1;
 
 // --- Funcții Helper Private ---
 
+// ==========================================================
+// AICI ESTE FUNCȚIA CORECTATĂ
+// ==========================================================
 async function _handleSyscallRequest(name, params) {
+    // Gestionăm syscall-urile specifice kernel-ului direct, pentru performanță
     if (name === 'proc.list') {
         return Array.from(processList.values()).map(p => ({ pid: p.pid, name: p.name, status: p.status }));
     }
@@ -19,14 +23,14 @@ async function _handleSyscallRequest(name, params) {
         return processHistory;
     }
 
-    if (syscalls.hasOwnProperty(name)) {
-        return syscalls[name](params);
-    }
-    
+    // Pentru TOATE celelalte syscall-uri, le pasăm pe eventBus pentru a fi preluate de driver-ul corespunzător.
+    // Numele evenimentului este exact numele syscall-ului (ex: 'vfs.stat').
+    // Împachetăm totul într-un Promise care va fi rezolvat/respins de către driver.
     return new Promise((resolve, reject) => {
-        eventBus.emit(`syscall.${name}`, { ...params, resolve, reject });
+        eventBus.emit(name, { ...params, resolve, reject });
     });
 }
+
 
 function _terminateWorkerProcess(process) {
     if (!process || !process.worker) return;
@@ -39,9 +43,6 @@ export const kernel = {
         logger.info('Kernel (Preemptive): Initializing...');
         eventBus.on('proc.exec', (params) => this.handleProcessExecution(params));
         
-        // ==========================================================
-        // AICI ESTE NOUA LOGICĂ ACTUALIZATĂ PENTRU 'proc.kill'
-        // ==========================================================
         eventBus.on('proc.kill', ({ pid, resolve, reject }) => {
             const pidToKill = parseInt(pid, 10);
             const process = processList.get(pidToKill);
@@ -52,24 +53,19 @@ export const kernel = {
 
             logger.info(`Kernel: Received kill signal for PID ${pidToKill}`);
 
-            // Actualizăm starea în istoric
             if (process.historyEntry) {
                 process.historyEntry.status = 'KILLED';
                 process.historyEntry.endTime = new Date();
-                process.historyEntry.exitCode = 143; // Cod standard pentru SIGTERM
+                process.historyEntry.exitCode = 143;
             }
             
-            // Verificăm tipul procesului
             if (process.worker) {
-                // Proces de tip Web Worker
                 _terminateWorkerProcess(process);
-                if (process.onExit) process.onExit(1); // Notifică shell-ul dacă e cazul
+                if (process.onExit) process.onExit(1);
             } else {
-                // Proces de pe Main Thread (UI)
                 eventBus.emit('proc.terminate_main', { pid: pidToKill });
             }
 
-            // Scoatem procesul din lista de procese active
             processList.delete(pidToKill);
             resolve();
         });

@@ -1,6 +1,7 @@
 // File: js/main.js (Versiune actualizată)
 import { kernel } from './kernel/kernel.js';
 import { eventBus } from './eventBus.js';
+import vfs from './devices/vfs.js';
 /**
  * NOU: Funcție pentru a verifica starea serverului backend.
  * Trimite o cerere către un endpoint simplu pentru a vedea dacă serverul răspunde.
@@ -50,7 +51,7 @@ async function startWebOS() {
     }
 
     await kernel.init();
-    
+    vfs.init();
     // Lansăm primul terminal la pornire
     launchTerminal();
 

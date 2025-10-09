@@ -134,6 +134,7 @@ export class Shell {
     }
 
     async handleInput(value) {
+        this.terminal.inputLine.style.visibility = 'hidden'
         const commandString = value.trim();
         
         if (commandString) {
