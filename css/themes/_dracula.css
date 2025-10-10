@@ -1,0 +1,16 @@
+/* --- File: css/themes/_dracula.css --- */
+
+body.dracula-theme {
+    --background-color: #282a36;
+    --terminal-bg: rgba(40, 42, 54, 0.5);
+    --text-color: #f8f8f2;
+    --prompt-color: #bd93f9; /* Purple */
+    --border-color: rgba(248, 248, 242, 0.1);
+    --header-bg: rgba(40, 42, 54, 0.7);
+    --caret-color: #f8f8f2;
+    --caret-shadow: rgba(248, 248, 242, 0.3);
+    --btn-color-close: #ff5555; /* Red */
+    --btn-color-maximize: #f1fa8c; /* Yellow */
+    --btn-color-minimize: #50fa7b; /* Green */
+    --scrollbar-thumb: #6272a4;
+}

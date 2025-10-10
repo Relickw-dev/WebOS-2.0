@@ -54,7 +54,10 @@ export class Terminal {
       this._boundHandleKeyDown = this._handleKeyDown.bind(this);
       this._boundFocusInput = () => this.input.focus();
       this._boundWrite = (data) => this.write(data);
-      this._boundSetTheme = (data) => this.setTheme(data);
+      this._boundSetTheme = (params) => {
+        this.setTheme(params); // Schimbă tema ca și înainte
+        params.resolve?.();    // Trimite semnalul "am terminat!" dacă există
+      };
 
       this.input.addEventListener('keydown', this._boundHandleKeyDown);
       this.root.addEventListener('click', this._boundFocusInput);
@@ -112,7 +115,7 @@ export class Terminal {
       else line.textContent = message;
 
       this.output.appendChild(line);
-      this.output.scrollTop = this.output.scrollHeight;
+      this.root.scrollTop = this.root.scrollHeight;
 
       logger.debug(`[PID ${this.pid}] Wrote message to terminal: "${message.slice(0, 80)}${message.length > 80 ? '...' : ''}"`);
     } catch (err) {
@@ -137,7 +140,7 @@ export class Terminal {
       this.promptElement.textContent = `user@webos:${cwd}$`;
       this.inputLine.style.visibility = 'visible';
       this.input.focus();
-      this.output.scrollTop = this.output.scrollHeight;
+      this.root.scrollTop = this.root.scrollHeight;
       logger.debug(`[PID ${this.pid}] Prompt shown for cwd: ${cwd}`);
     } catch (err) {
       logger.warn(`[PID ${this.pid}] Failed to show prompt:`, err?.message || err);

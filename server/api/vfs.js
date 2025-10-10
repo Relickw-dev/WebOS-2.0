@@ -152,17 +152,37 @@ router.post('/write', async (req, res) => {
         if (typeof filePath !== 'string' || content === undefined) {
             return res.status(400).json({ error: 'Path and content are required.' });
         }
+        
         const dirOfFile = path.dirname(filePath);
         if (!(await checkPermission(dirOfFile, user, 'write'))) {
             return res.status(403).json({ error: `write: cannot create file in '${dirOfFile}': Permission denied` });
         }
+        
         const fullPath = getFullPath(filePath);
         const metaPath = path.join(path.dirname(fullPath), `.${path.basename(fullPath)}.meta`);
+        
         await fs.writeFile(fullPath, content, { encoding: 'utf8', flag: append ? 'a' : 'w' });
-        try { await fs.access(metaPath); } catch {
-            const defaultMeta = { owner: user, group: getUserGroups(user)[0] || 'users', permissions: '-rw-rw-r--' };
+        
+        // Verificăm dacă fișierul .meta există deja (caz în care suprascriem un fișier)
+        try { 
+            await fs.access(metaPath); 
+        } catch {
+            // Fișierul .meta nu există, deci creăm unul nou cu grupul moștenit
+
+            // --- START MODIFICARE ---
+            // 1. Obținem metadatele directorului părinte.
+            const parentFullPath = getFullPath(dirOfFile);
+            const parentMeta = await getMeta(parentFullPath);
+
+            // 2. Determinăm grupul moștenit.
+            const inheritedGroup = parentMeta?.group || (getUserGroups(user)[0] || 'users');
+            // --- FINAL MODIFICARE ---
+
+            // 3. Folosim noul grup.
+            const defaultMeta = { owner: user, group: inheritedGroup, permissions: '-rw-rw-r--' };
             await fs.writeFile(metaPath, JSON.stringify(defaultMeta, null, 2));
         }
+        
         res.json({ success: true });
     } catch (err) {
         if (err.code === 'EISDIR') return res.status(400).json({ error: `write: cannot write to '${filePath}': It is a directory` });
@@ -174,15 +194,30 @@ router.post('/mkdir', async (req, res) => {
     const { path: dirPath, user = DEFAULT_USER } = req.body;
     try {
         if (!dirPath) return res.status(400).json({ error: 'Path is required' });
+        
         const parentDir = path.dirname(dirPath);
         if (!(await checkPermission(parentDir, user, 'write'))) {
             return res.status(403).json({ error: `mkdir: cannot create directory in '${parentDir}': Permission denied` });
         }
+
+        // --- START MODIFICARE ---
+        // 1. Obținem metadatele directorului părinte pentru a moșteni grupul.
+        const parentFullPath = getFullPath(parentDir);
+        const parentMeta = await getMeta(parentFullPath);
+        
+        // 2. Determinăm grupul: folosim grupul părintelui sau, ca fallback, logica veche.
+        // Părintele rădăcinii ('/') nu are un meta-fișier, deci e nevoie de fallback.
+        const inheritedGroup = parentMeta?.group || (getUserGroups(user)[0] || 'users');
+        // --- FINAL MODIFICARE ---
+
         const fullPath = getFullPath(dirPath);
         const metaPath = path.join(path.dirname(fullPath), `.${path.basename(fullPath)}.meta`);
         await fs.mkdir(fullPath, { recursive: true });
-        const defaultMeta = { owner: user, group: getUserGroups(user)[0] || 'users', permissions: 'drwxrwxr-x' };
+
+        // 3. Folosim grupul moștenit la crearea metadatelor
+        const defaultMeta = { owner: user, group: inheritedGroup, permissions: 'drwxrwxr-x' };
         await fs.writeFile(metaPath, JSON.stringify(defaultMeta, null, 2));
+        
         res.json({ success: true });
     } catch (err) {
         if (err.code === 'EEXIST') return res.status(409).json({ error: `mkdir: cannot create directory ‘${dirPath}’: File exists` });

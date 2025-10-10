@@ -1,0 +1,41 @@
+/* --- File: css/base/_animations.css --- */
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes blink {
+    50% { opacity: 0; }
+}
+
+@keyframes startupAnimation {
+    from {
+        opacity: 0;
+        transform: scale(0.98) translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+@keyframes scanline {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(100%); }
+}
+
+@keyframes subtle-glow-pulse {
+    0%, 100% {
+        opacity: 0.4;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}

@@ -1,0 +1,20 @@
+/* --- File: css/themes/_default.css --- */
+
+/* Tema Light (Default) */
+:root {
+    --background-color: #f0f4f8;
+    --terminal-bg: rgba(255, 255, 255, 0.6);
+    --text-color: #2e3440;
+    --prompt-color: #5e81ac;
+    --border-color: rgba(0, 0, 0, 0.08);
+    --header-bg: rgba(255, 255, 255, 0.7);
+    --caret-color: #2e3440;
+    --caret-shadow: rgba(46, 52, 64, 0.3);
+    --btn-color-close: #bf616a;
+    --btn-color-maximize: #ebcb8b;
+    --btn-color-minimize: #a3be8c;
+    --scrollbar-thumb: #c0c5ce;
+    --scrollbar-track: transparent;
+    --logo-bg-opacity: 0.05;
+    --text-glow: none;
+}

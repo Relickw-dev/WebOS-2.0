@@ -1,0 +1,20 @@
+/* --- File: css/main.css --- */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+/* 1. Importarea Temelor (Variabile) */
+@import './themes/_default.css';
+@import './themes/_true-dark.css';
+@import './themes/_nord.css';
+@import './themes/_dracula.css';
+@import './themes/_solarized-light.css';
+@import './themes/_neon-blade.css';
+@import './themes/_matrix-green.css';
+
+/* 2. Importarea Animațiilor și Stilurilor de Bază */
+@import './base/_animations.css';
+@import './base/_base.css';
+
+/* 3. Importarea Componentelor UI */
+@import './components/_window.css';
+@import './components/_buttons.css';
+@import './components/_terminal.css';

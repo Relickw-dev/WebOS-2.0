@@ -1,0 +1,13 @@
+/* --- File: css/themes/_nord.css --- */
+
+body.nord-theme {
+    --background-color: #2e3440;
+    --terminal-bg: rgba(46, 52, 64, 0.5);
+    --text-color: #d8dee9;
+    --prompt-color: #88c0d0;
+    --border-color: rgba(216, 222, 233, 0.1);
+    --header-bg: rgba(46, 52, 64, 0.7);
+    --caret-color: #eceff4;
+    --caret-shadow: rgba(236, 239, 244, 0.3);
+    --scrollbar-thumb: #4c566a;
+}
