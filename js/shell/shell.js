@@ -10,6 +10,7 @@ import { resolvePath } from '../utils/path.js';
 
 let availableCommands = [];
 let commandsFetched = false;
+const validUsers = ['user', 'root', 'guest']; // Utilizatori cunoscuți de sistem
 
 /** Preia lista de comenzi din API sau folosește fallback local */
 async function fetchCommands() {
@@ -20,7 +21,7 @@ async function fetchCommands() {
     if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
 
     const commandsFromServer = await response.json();
-    const builtInCommands = ['cd', 'clear', 'chmod', 'su'];
+    const builtInCommands = ['cd', 'clear', 'su']; // Comenzi gestionate direct de shell
     availableCommands = [...new Set([...commandsFromServer, ...builtInCommands])];
     logger.info(`Shell: Loaded ${availableCommands.length} commands from API.`);
   } catch (error) {
@@ -35,7 +36,7 @@ async function fetchCommands() {
   commandsFetched = true;
 }
 
-/** Parsează un string de comandă în argumente */
+/** Parsează un string de comandă în argumente, gestionând ghilimelele */
 function parseCommand(commandString) {
   const parts = commandString.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
   return parts.map(p =>
@@ -97,7 +98,7 @@ export class Shell {
     this.pid = terminalInstance.pid;
 
     this.currentDirectory = '/';
-    this.currentUser = 'user'; // 🆕 Context de utilizator
+    this.currentUser = 'guest'; // Pornim ca 'guest' cu permisiuni minime
 
     this.commandHistory = [];
     this.historyIndex = 0;
@@ -138,13 +139,13 @@ export class Shell {
   // ===========================
   displayWelcomeMessage() {
     const msg = `Solus [Version 2.0] :: Terminal PID: ${this.pid}\n` +
-                `Logged in as '${this.currentUser}'. Type 'help' for commands.\n`;
+                `Logged in as '${this.currentUser}'. Type 'help' for available commands.\n`;
     this.terminal.write({ message: msg });
   }
 
   updatePrompt() {
     try {
-      const prompt = `${this.currentUser}@webos:${this.currentDirectory}$`;
+      const prompt = `${this.currentUser}@webos:${this.currentDirectory}$ `;
       this.terminal.promptElement.textContent = prompt;
       this.terminal.inputLine.style.visibility = 'visible';
       this.terminal.input.focus();
@@ -183,7 +184,7 @@ export class Shell {
           break;
 
         case 'su':
-          await this._handleSu(commandString);
+          this._handleSu(commandString); // `su` este sincron, nu necesită await
           break;
 
         default:
@@ -191,7 +192,7 @@ export class Shell {
       }
     } catch (err) {
       logger.error(`[PID ${this.pid}] Command execution error:`, err?.message || err);
-      this.terminal.write({ message: `Error: ${err.message}`, isError: true });
+      this.terminal.write({ message: `Shell Error: ${err.message}`, isError: true });
       this.updatePrompt();
     }
   }
@@ -211,20 +212,26 @@ export class Shell {
         this.currentDirectory = resolved;
       }
     } catch (e) {
-      this.terminal.write({
-        message: `cd: ${e.message.includes('such file') ? 'no such file or directory' : e.message}: ${targetPath}`,
-        isError: true
-      });
+      const errorMessage = e.message.toLowerCase().includes('permission denied')
+        ? `cd: permission denied: ${targetPath}`
+        : `cd: no such file or directory: ${targetPath}`;
+      this.terminal.write({ message: errorMessage, isError: true });
     }
 
     this.updatePrompt();
   }
 
-  async _handleSu(commandString) {
-    const [, newUser = 'user'] = parseCommand(commandString);
-    this.currentUser = newUser;
-    this.terminal.write({ message: `User changed to '${this.currentUser}'.` });
-    logger.info(`[PID ${this.pid}] User switched to '${this.currentUser}'.`);
+  _handleSu(commandString) {
+    const [, newUser = 'guest'] = parseCommand(commandString);
+
+    if (validUsers.includes(newUser)) {
+        this.currentUser = newUser;
+        this.terminal.write({ message: `User changed to '${this.currentUser}'.` });
+        logger.info(`[PID ${this.pid}] User switched to '${this.currentUser}'.`);
+    } else {
+        this.terminal.write({ message: `su: user '${newUser}' does not exist`, isError: true });
+    }
+
     this.updatePrompt();
   }
 
@@ -317,10 +324,11 @@ export class Shell {
       const searchPath = resolvePath(this.currentDirectory, basePath);
 
       try {
+        // Trimitem utilizatorul curent la syscall pentru autocomplete corect
         const entries = await syscall('vfs.readDir', { path: searchPath, user: this.currentUser });
         this.autocompleteSession.matches = entries
           .filter(e => e.name.toLowerCase().startsWith(prefix.toLowerCase()))
-          .map(e => (e.type === 'directory' ? `${basePath}${e.name}/` : `${basePath}${e.name}`));
+          .map(e => (e.type === 'dir' ? `${basePath}${e.name}/` : `${basePath}${e.name}`));
       } catch {
         this.autocompleteSession.matches = [];
       }
