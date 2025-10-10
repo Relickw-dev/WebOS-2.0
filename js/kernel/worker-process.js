@@ -8,6 +8,7 @@ import { logger } from '../utils/logger.js';
 
 let callIdCounter = 0;
 const syscallPromises = new Map();
+let processPID = -1; // MODIFICARE: Variabilă globală pentru a stoca PID-ul procesului curent
 
 /**
  * Trimite o cerere syscall către kernel și așteaptă răspunsul.
@@ -26,12 +27,14 @@ function syscall(name, params = {}) {
   return new Promise((resolve, reject) => {
     syscallPromises.set(callId, { resolve, reject });
 
+    // MODIFICARE: Adăugăm `pid: processPID` în payload-ul trimis kernel-ului.
+    // Acest lucru permite kernel-ului să știe ce proces face cererea.
     postMessage({
       type: 'syscall',
-      payload: { name, params, callId },
+      payload: { name, params, callId, pid: processPID },
     });
 
-    logger.debug(`Worker sent syscall '${name}' (callId=${callId})`);
+    logger.debug(`Worker (PID ${processPID}) sent syscall '${name}' (callId=${callId})`);
   });
 }
 
@@ -107,12 +110,16 @@ self.onmessage = async (e) => {
 
       /** 🚀 Inițializare proces nou */
       case 'init': {
-        const { procInfo, cwd, stdin } = payload || {};
+        // MODIFICARE: Extragem și PID-ul din payload.
+        const { procInfo, cwd, pid, stdin } = payload || {};
         if (!procInfo || !procInfo.name) {
           throw new Error('Invalid process initialization payload.');
         }
 
-        logger.info(`Worker initializing process '${procInfo.name}' (cwd: ${cwd || '/'})`);
+        // MODIFICARE: Stocăm PID-ul în variabila globală a worker-ului.
+        processPID = pid;
+
+        logger.info(`Worker (PID ${processPID}) initializing process '${procInfo.name}' (cwd: ${cwd || '/'})`);
         await runProcess(procInfo, cwd, stdin);
         break;
       }

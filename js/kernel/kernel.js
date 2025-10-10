@@ -112,7 +112,8 @@ export const kernel = {
   // --------------------------------------------------------
   // 🏃‍♂️ Process Execution Entry Point
   // --------------------------------------------------------
-  async handleProcessExecution({ pipeline, onOutput, onExit, cwd }) {
+  // MODIFICARE: Adăugăm `user` în parametrii destructurați
+  async handleProcessExecution({ pipeline, onOutput, onExit, cwd, user }) {
     if (!Array.isArray(pipeline) || !pipeline.length) {
       logger.warn('Kernel: Received empty pipeline.');
       onExit?.(0);
@@ -123,7 +124,8 @@ export const kernel = {
     if (procInfo.runOn === 'main') {
       await this._runMainThreadProcess(procInfo, onOutput, onExit, cwd);
     } else {
-      this._runPipelineStage(pipeline, onOutput, onExit, cwd, null);
+      // MODIFICARE: Pasăm `user` mai departe către _runPipelineStage
+      this._runPipelineStage(pipeline, onOutput, onExit, cwd, user, null);
     }
   },
 
@@ -153,6 +155,8 @@ export const kernel = {
       status: 'RUNNING',
       onExit: onExit || (() => {}),
       historyEntry
+      // Notă: Procesele main-thread nu au nevoie de context `user` deocamdată,
+      // deoarece singurul proces de acest tip (`terminal-process`) nu face syscalls VFS.
     };
     processList.set(pid, process);
 
@@ -176,7 +180,8 @@ export const kernel = {
   // --------------------------------------------------------
   // ⚙️ Run a Worker-Based Process (Pipeline Stage)
   // --------------------------------------------------------
-  _runPipelineStage(pipeline, finalOnOutput, finalOnExit, cwd, stdin) {
+  // MODIFICARE: Adăugăm `user` ca parametru
+  _runPipelineStage(pipeline, finalOnOutput, finalOnExit, cwd, user, stdin) {
     if (!pipeline.length) {
       finalOnExit?.(0);
       return;
@@ -203,7 +208,8 @@ export const kernel = {
       worker,
       status: 'RUNNING',
       onExit: finalOnExit,
-      historyEntry
+      historyEntry,
+      user: user || 'guest' // MODIFICARE: Stocăm utilizatorul pe obiectul procesului
     };
     processList.set(pid, process);
 
@@ -214,7 +220,20 @@ export const kernel = {
       switch (type) {
         case 'syscall':
           try {
-            const result = await _handleSyscallRequest(payload.name, payload.params);
+            // ==========================================================
+            // AICI ESTE LOGICA CHEIE PENTRU PERMISIUNI
+            // ==========================================================
+            // 1. Găsim procesul care a făcut cererea, folosind PID-ul trimis de worker
+            const callingProcess = processList.get(payload.pid);
+            // 2. Extragem utilizatorul din obiectul procesului (cu fallback la 'guest')
+            const userForSyscall = callingProcess ? callingProcess.user : 'guest';
+            // 3. Creăm noii parametri pentru syscall, adăugând `user`
+            const syscallParams = { ...payload.params, user: userForSyscall };
+            
+            // 4. Executăm syscall-ul cu parametrii corecți
+            const result = await _handleSyscallRequest(payload.name, syscallParams);
+            // ==========================================================
+
             worker.postMessage({ type: 'syscall_result', payload: { result, callId: payload.callId } });
           } catch (error) {
             worker.postMessage({
@@ -246,10 +265,12 @@ export const kernel = {
               finalOnOutput,
               finalOnExit,
               cwd,
+              user, // MODIFICARE: Pasăm `user` la următorul stagiu din pipeline
               outputBuffer.trimEnd()
             );
           } else if (procInfo.stdout === 'file') {
-            await this._handleFileRedirect(procInfo, cwd, outputBuffer, finalOnOutput, finalOnExit);
+            // MODIFICARE: Pasăm și `user` la redirectarea către fișier
+            await this._handleFileRedirect(procInfo, cwd, user, outputBuffer, finalOnOutput, finalOnExit);
           } else {
             finalOnExit?.(payload.exitCode);
           }
@@ -277,15 +298,19 @@ export const kernel = {
   // --------------------------------------------------------
   // 📄 Handle Output Redirection to File
   // --------------------------------------------------------
-  async _handleFileRedirect(procInfo, cwd, buffer, onOutput, onExit) {
+  // MODIFICARE: Adăugăm `user` ca parametru
+  async _handleFileRedirect(procInfo, cwd, user, buffer, onOutput, onExit) {
     try {
       let content = buffer.trimEnd();
       if (procInfo.append) content = '\n' + content;
 
+      // syscalls['vfs.writeFile'] este un wrapper care va ajunge tot la _handleSyscallRequest,
+      // dar pentru a fi expliciți, adăugăm `user` și aici.
       await syscalls['vfs.writeFile']({
         path: resolvePath(cwd, procInfo.outputFile),
         content,
-        append: procInfo.append
+        append: procInfo.append,
+        user: user // Asigurăm pasarea utilizatorului
       });
 
       onExit?.(0);

@@ -5,7 +5,7 @@ const fs = require('fs/promises');
 
 // Asigură-te că ai creat fișierul 'server/auth.js'
 // Acesta trebuie să exporte funcția getUserGroups(user).
-const { getUserGroups } = require('../auth.js');
+const { getUserGroups, getUsers } = require('../auth.js');
 
 const router = express.Router();
 const virtualRoot = path.join(__dirname, '..', '..', 'fs_root');

@@ -13,11 +13,13 @@ app.use(cors());
 app.use(express.json());
 app.use('/api/vfs', vfsApi);
 
-// --- MODIFICARE CHEIE: Am transformat în funcție async și am folosit await ---
+// Endpoint care returnează comenzile disponibile
 app.get('/api/commands', async (req, res) => {
     const binPath = path.join(__dirname, '..', 'js', 'bin');
     
     try {
+        // Verificăm dacă directorul `bin` există, pentru a evita erori la pornire
+        await fs.access(binPath);
         const files = await fs.readdir(binPath);
         
         const commandNames = files
@@ -26,10 +28,32 @@ app.get('/api/commands', async (req, res) => {
 
         res.json(commandNames);
     } catch (err) {
+        // Dacă directorul nu există (caz normal), returnăm un array gol.
+        if (err.code === 'ENOENT') {
+            console.warn('Directorul js/bin nu a fost găsit. Se returnează o listă goală de comenzi.');
+            res.json([]);
+            return;
+        }
         console.error('Eroare la citirea directorului js/bin:', err);
         res.status(500).json({ error: 'Nu s-au putut prelua comenzile.' });
     }
 });
+
+// ==========================================================
+// AICI ESTE MODIFICAREA
+// ==========================================================
+// ENDPOINT NOU: Returnează lista de utilizatori valizi din auth.js
+app.get('/api/users', (req, res) => {
+    try {
+        const auth = require('./auth.js');
+        const userList = auth.getUsers ? auth.getUsers() : Object.keys(auth.users);
+        res.json(userList);
+    } catch (err) {
+        console.error('Error getting users:', err);
+        res.status(500).json({ error: 'Could not retrieve users.' });
+    }
+});
+// ==========================================================
 
 app.use(express.static(path.join(__dirname, '..'))); // Servim direct din rădăcina proiectului
 

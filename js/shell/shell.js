@@ -10,7 +10,9 @@ import { resolvePath } from '../utils/path.js';
 
 let availableCommands = [];
 let commandsFetched = false;
-const validUsers = ['user', 'root', 'guest']; // Utilizatori cunoscuți de sistem
+// MODIFICARE: Folosim o listă de fallback, dar datele reale vor veni de la API.
+let validUsers = ['guest', 'user', 'root']; 
+let usersFetched = false;
 
 /** Preia lista de comenzi din API sau folosește fallback local */
 async function fetchCommands() {
@@ -34,6 +36,21 @@ async function fetchCommands() {
   }
 
   commandsFetched = true;
+}
+
+/** NOU: Preia lista de utilizatori din API sau folosește fallback local */
+async function fetchUsers() {
+    if (usersFetched) return;
+    try {
+        const response = await fetch('http://localhost:3000/api/users');
+        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+        validUsers = await response.json();
+        logger.info(`Shell: Loaded ${validUsers.length} users from API.`);
+    } catch (error) {
+        logger.error(`Shell: Failed to fetch users (${error.message}). Using fallback list.`);
+        // `validUsers` conține deja lista de fallback
+    }
+    usersFetched = true;
 }
 
 /** Parsează un string de comandă în argumente, gestionând ghilimelele */
@@ -120,7 +137,8 @@ export class Shell {
   // ===========================
   async init() {
     try {
-      await fetchCommands();
+      // MODIFICARE: Așteptăm încărcarea comenzilor și a utilizatorilor în paralel
+      await Promise.all([fetchCommands(), fetchUsers()]);
 
       eventBus.on('syscall.shell.get_history', ({ resolve }) => {
         resolve(this.commandHistory);
@@ -241,7 +259,7 @@ export class Shell {
     eventBus.emit('proc.exec', {
       pipeline,
       cwd: this.currentDirectory,
-      user: this.currentUser,
+      user: this.currentUser, // MODIFICARE: Asigurăm pasarea utilizatorului curent la kernel
       onOutput: (data) => eventBus.emit(`terminal.write.${this.pid}`, data),
       onExit: () => this.updatePrompt()
     });
@@ -338,3 +356,4 @@ export class Shell {
 
 // Pre-fetch pentru a accelera prima instanță
 fetchCommands();
+fetchUsers(); // MODIFICARE: Apelăm și funcția de preluare a utilizatorilor
