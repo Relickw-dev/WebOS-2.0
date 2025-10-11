@@ -51,7 +51,7 @@
     justify-content: center;
     align-items: center;
     opacity: 0;
-    animation: fadeIn 0.5s 0.1s forwards;
+    animation: fadeIn 0.0s 0.0s forwards;
     z-index: 9999;
     overflow: hidden; /* Ascundem ce depășește ecranul */
 }
@@ -84,6 +84,7 @@
     border: 1px solid #30363d;
     background: rgba(1, 4, 9, 0.8);
     backdrop-filter: blur(10px);
+    animation: fadeIn 1s 0.1s forwards;
     z-index: 10;
 }
 
