@@ -4,26 +4,16 @@ import { logger } from '../utils/logger.js';
 import { syscall } from '../kernel/syscalls.js';
 import { resolvePath } from '../utils/path.js';
 
-// ===============================
-// 🔧 Helper Functions & Globals
-// ===============================
-
 let availableCommands = [];
 let commandsFetched = false;
-// MODIFICARE: Folosim o listă de fallback, dar datele reale vor veni de la API.
-let validUsers = ['guest', 'user', 'root']; 
-let usersFetched = false;
 
-/** Preia lista de comenzi din API sau folosește fallback local */
 async function fetchCommands() {
   if (commandsFetched) return;
-
   try {
     const response = await fetch('http://localhost:3000/api/commands');
     if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-
     const commandsFromServer = await response.json();
-    const builtInCommands = ['cd', 'clear', 'su']; // Comenzi gestionate direct de shell
+    const builtInCommands = ['cd', 'clear', 'su'];
     availableCommands = [...new Set([...commandsFromServer, ...builtInCommands])];
     logger.info(`Shell: Loaded ${availableCommands.length} commands from API.`);
   } catch (error) {
@@ -34,26 +24,9 @@ async function fetchCommands() {
       'su', 'theme', 'touch', 'wc'
     ];
   }
-
   commandsFetched = true;
 }
 
-/** NOU: Preia lista de utilizatori din API sau folosește fallback local */
-async function fetchUsers() {
-    if (usersFetched) return;
-    try {
-        const response = await fetch('http://localhost:3000/api/users');
-        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-        validUsers = await response.json();
-        logger.info(`Shell: Loaded ${validUsers.length} users from API.`);
-    } catch (error) {
-        logger.error(`Shell: Failed to fetch users (${error.message}). Using fallback list.`);
-        // `validUsers` conține deja lista de fallback
-    }
-    usersFetched = true;
-}
-
-/** Parsează un string de comandă în argumente, gestionând ghilimelele */
 function parseCommand(commandString) {
   const parts = commandString.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
   return parts.map(p =>
@@ -63,7 +36,6 @@ function parseCommand(commandString) {
   );
 }
 
-/** Descompune o comandă complexă cu pipes/redirecționări într-un pipeline executabil */
 function parsePipeline(fullCommand) {
   const pipeline = [];
   const commands = fullCommand.split('|').map(c => c.trim());
@@ -93,17 +65,12 @@ function parsePipeline(fullCommand) {
     pipeline.push({ name, args, stdout, outputFile, append });
   }
 
-  // Marchează comenzile intermediare ca având stdout -> pipe
   for (let i = 0; i < pipeline.length - 1; i++) {
     pipeline[i].stdout = 'pipe';
   }
 
   return pipeline;
 }
-
-// ===============================
-// 🧠 Shell Class Definition
-// ===============================
 
 export class Shell {
   constructor(terminalInstance) {
@@ -115,7 +82,7 @@ export class Shell {
     this.pid = terminalInstance.pid;
 
     this.currentDirectory = '/';
-    this.currentUser = 'guest'; // Pornim ca 'guest' cu permisiuni minime
+    this.currentUser = 'guest';
 
     this.commandHistory = [];
     this.historyIndex = 0;
@@ -132,29 +99,41 @@ export class Shell {
     this.init();
   }
 
-  // ===========================
-  // 🚀 Initialization
-  // ===========================
   async init() {
     try {
-      // MODIFICARE: Așteptăm încărcarea comenzilor și a utilizatorilor în paralel
-      await Promise.all([fetchCommands(), fetchUsers()]);
+      await fetchCommands();
+
+      // Get current user from kernel for this shell PID
+      try {
+        const user = await syscall('auth.getUser', { pid: this.pid });
+        this.currentUser = user || 'guest';
+        logger.info(`[PID ${this.pid}] Shell initialized for user '${this.currentUser}'.`);
+      } catch (err) {
+        logger.warn(`[PID ${this.pid}] Could not fetch user from kernel: ${err.message}`);
+        this.currentUser = 'guest';
+      }
 
       eventBus.on('syscall.shell.get_history', ({ resolve }) => {
         resolve(this.commandHistory);
       });
 
-      logger.info(`[PID ${this.pid}] Shell initialized for user '${this.currentUser}'.`);
+      // Update prompt/output
       this.displayWelcomeMessage();
       this.updatePrompt();
+
+      // React to kernel-side user changes for this PID (optional)
+      eventBus.on('auth.user_changed', ({ pid, user }) => {
+        if (Number(pid) === Number(this.pid)) {
+          this.currentUser = user;
+          this.terminal.write({ message: `User changed to '${user}'.` });
+          this.updatePrompt();
+        }
+      });
     } catch (err) {
       logger.error(`[PID ${this.pid}] Shell init failed:`, err?.message || err);
     }
   }
 
-  // ===========================
-  // 💬 UI Helpers
-  // ===========================
   displayWelcomeMessage() {
     const msg = `Solus [Version 2.0] :: Terminal PID: ${this.pid}\n` +
                 `Logged in as '${this.currentUser}'. Type 'help' for available commands.\n`;
@@ -173,9 +152,6 @@ export class Shell {
     }
   }
 
-  // ===========================
-  // ⌨️ Input Handling
-  // ===========================
   async handleInput(value) {
     this.terminal.inputLine.style.visibility = 'hidden';
     const commandString = value.trim();
@@ -202,7 +178,7 @@ export class Shell {
           break;
 
         case 'su':
-          this._handleSu(commandString); // `su` este sincron, nu necesită await
+          await this._handleSu(commandString);
           break;
 
         default:
@@ -215,9 +191,6 @@ export class Shell {
     }
   }
 
-  // ===========================
-  // 🧩 Command Handlers
-  // ===========================
   async _handleCd(commandString) {
     const [, targetPath = '/'] = parseCommand(commandString);
     const resolved = resolvePath(this.currentDirectory, targetPath);
@@ -239,15 +212,15 @@ export class Shell {
     this.updatePrompt();
   }
 
-  _handleSu(commandString) {
+  async _handleSu(commandString) {
     const [, newUser = 'guest'] = parseCommand(commandString);
 
-    if (validUsers.includes(newUser)) {
-        this.currentUser = newUser;
-        this.terminal.write({ message: `User changed to '${this.currentUser}'.` });
-        logger.info(`[PID ${this.pid}] User switched to '${this.currentUser}'.`);
-    } else {
-        this.terminal.write({ message: `su: user '${newUser}' does not exist`, isError: true });
+    try {
+      const res = await syscall('auth.switchUser', { pid: this.pid, target: newUser });
+      this.currentUser = res.user || newUser;
+      logger.info(`[PID ${this.pid}] User switched to '${this.currentUser}'.`);
+    } catch (err) {
+      this.terminal.write({ message: `su: user '${newUser}' does not exist`, isError: true });
     }
 
     this.updatePrompt();
@@ -259,7 +232,7 @@ export class Shell {
     eventBus.emit('proc.exec', {
       pipeline,
       cwd: this.currentDirectory,
-      user: this.currentUser, // MODIFICARE: Asigurăm pasarea utilizatorului curent la kernel
+      user: this.currentUser,
       onOutput: (data) => eventBus.emit(`terminal.write.${this.pid}`, data),
       onExit: () => this.updatePrompt()
     });
@@ -267,9 +240,6 @@ export class Shell {
     logger.debug(`[PID ${this.pid}] Executed pipeline: ${commandString}`);
   }
 
-  // ===========================
-  // ⏪ History Navigation
-  // ===========================
   handlePrevHistory() {
     if (this.historyIndex > 0) {
       this.historyIndex--;
@@ -288,9 +258,6 @@ export class Shell {
     }
   }
 
-  // ===========================
-  // 🔍 Autocomplete
-  // ===========================
   async handleAutocomplete(value) {
     const isNewSearch = value !== this.autocompleteSession.lastCompletedValue;
 
@@ -342,7 +309,6 @@ export class Shell {
       const searchPath = resolvePath(this.currentDirectory, basePath);
 
       try {
-        // Trimitem utilizatorul curent la syscall pentru autocomplete corect
         const entries = await syscall('vfs.readDir', { path: searchPath, user: this.currentUser });
         this.autocompleteSession.matches = entries
           .filter(e => e.name.toLowerCase().startsWith(prefix.toLowerCase()))
@@ -354,6 +320,5 @@ export class Shell {
   }
 }
 
-// Pre-fetch pentru a accelera prima instanță
+// Pre-fetch commands only
 fetchCommands();
-fetchUsers(); // MODIFICARE: Apelăm și funcția de preluare a utilizatorilor

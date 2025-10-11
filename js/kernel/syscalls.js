@@ -2,24 +2,6 @@
 import { eventBus } from '../eventBus.js';
 import { logger } from '../utils/logger.js';
 
-/**
- * ============================================================
- * Syscalls Registry
- * ------------------------------------------------------------
- * Acest modul rulează în thread-ul principal și acționează ca
- * intermediar între kernel și driverele (Terminal, VFS, Proc).
- * Workeri trimit cereri syscall, kernelul le redirecționează aici.
- * ============================================================
- */
-
-/**
- * Helper pentru a crea un syscall bazat pe eveniment.
- * Returnează un Promise care este rezolvat/rejectat de driver.
- * 
- * @param {string} eventName - Numele evenimentului din eventBus.
- * @param {object} params - Parametrii syscall-ului.
- * @returns {Promise<any>}
- */
 function makeAsyncSyscall(eventName, params = {}) {
   return new Promise((resolve, reject) => {
     try {
@@ -32,11 +14,7 @@ function makeAsyncSyscall(eventName, params = {}) {
   });
 }
 
-/**
- * Syscalls map — definim funcțiile disponibile în kernel.
- */
 export const syscalls = {
-  // --- Terminal Syscalls ---
   'terminal.write': async (params) => {
     logger.debug('Syscall -> terminal.write', params);
     eventBus.emit('terminal.write', params);
@@ -50,7 +28,7 @@ export const syscalls = {
     eventBus.emit('terminal.set_theme', params);
   },
 
-  // --- VFS Syscalls ---
+  // VFS
   'vfs.readDir': (params) => makeAsyncSyscall('vfs.readDir', params),
   'vfs.stat': (params) => makeAsyncSyscall('vfs.stat', params),
   'vfs.mkdir': (params) => makeAsyncSyscall('vfs.mkdir', params),
@@ -62,26 +40,19 @@ export const syscalls = {
   'vfs.grep': (params) => makeAsyncSyscall('vfs.grep', params),
   'vfs.chmod': (params) => makeAsyncSyscall('vfs.chmod', params),
 
-  // --- Process Syscalls ---
+  // Process
   'proc.sleep': async ({ ms }) => {
     logger.debug(`Syscall -> proc.sleep (${ms}ms)`);
     return new Promise((resolve) => setTimeout(resolve, ms));
   },
   'proc.kill': (params) => makeAsyncSyscall('proc.kill', params),
+
+  // Auth (main-thread callers like shell will emit these events; kernel listens)
+  'auth.listUsers': (params) => makeAsyncSyscall('auth.listUsers', params),
+  'auth.getUser': (params) => makeAsyncSyscall('auth.getUser', params),
+  'auth.switchUser': (params) => makeAsyncSyscall('auth.switchUser', params),
 };
 
-/**
- * ============================================================
- * syscall(name, params)
- * ------------------------------------------------------------
- * Funcție folosită de modulele care rulează în thread-ul principal
- * (ex: shell.js). Verifică existența syscall-ului și îl execută.
- * ============================================================
- * 
- * @param {string} name - Numele syscall-ului.
- * @param {object} [params={}] - Parametrii pentru syscall.
- * @returns {Promise<any>}
- */
 export async function syscall(name, params = {}) {
   if (!name || typeof name !== 'string') {
     const err = new Error('Invalid syscall name');

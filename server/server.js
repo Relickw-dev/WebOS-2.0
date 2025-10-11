@@ -39,10 +39,37 @@ app.get('/api/commands', async (req, res) => {
     }
 });
 
-// ==========================================================
-// AICI ESTE MODIFICAREA
-// ==========================================================
-// ENDPOINT NOU: Returnează lista de utilizatori valizi din auth.js
+app.post('/api/authenticate', async (req, res) => {
+    // Extragem username-ul și parola din corpul cererii (request body)
+    const { username, password } = req.body;
+
+    // Verificăm dacă am primit datele necesare
+    if (!username || !password) {
+        return res.status(400).json({ success: false, message: 'Username and password are required.' });
+    }
+
+    try {
+        // Importăm modulul de autentificare
+        const auth = require('./auth.js');
+        
+        // Folosim funcția 'authenticate' pentru a verifica datele
+        const isValid = await auth.authenticate(username, password);
+
+        // Răspundem în funcție de rezultat
+        if (isValid) {
+            // Dacă datele sunt corecte, trimitem un răspuns de succes
+            res.json({ success: true });
+        } else {
+            // Dacă datele sunt greșite, trimitem o eroare de autentificare (401)
+            res.status(401).json({ success: false, message: 'Invalid credentials.' });
+        }
+    } catch (err) {
+        // În caz de eroare neașteptată pe server
+        console.error('Authentication error:', err);
+        res.status(500).json({ success: false, message: 'Internal server error.' });
+    }
+});
+
 app.get('/api/users', (req, res) => {
     try {
         const auth = require('./auth.js');

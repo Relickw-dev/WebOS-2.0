@@ -4,35 +4,57 @@ import { syscalls } from './syscalls.js';
 import { logger } from '../utils/logger.js';
 import { resolvePath } from '../utils/path.js';
 
-// ==========================================================
-// 🧠 Kernel State (Private Module Scope)
-// ==========================================================
+// Kernel state
 const processList = new Map();
 const processHistory = [];
 let nextPid = 1;
 
-// ==========================================================
-// ⚙️ Internal Helpers
-// ==========================================================
+// User database (kernel-owned)
+const validUsers = ['guest', 'user', 'root'];
 
-/**
- * Handle syscall requests — some handled internally, others delegated to eventBus.
- */
+// Internal syscall handler
 async function _handleSyscallRequest(name, params) {
   try {
+    // --- Auth/syscall handling for workers (direct calls) ---
+    if (name === 'auth.listUsers') {
+      return [...validUsers];
+    }
+
+    if (name === 'auth.getUser') {
+      const pid = params?.pid;
+      const proc = processList.get(Number(pid));
+      return proc ? proc.user : 'guest';
+    }
+
+    if (name === 'auth.switchUser') {
+      const pid = Number(params?.pid);
+      const target = params?.target;
+      if (!target || !validUsers.includes(target)) {
+        throw new Error(`auth.switchUser: user '${target}' not found`);
+      }
+      const proc = processList.get(pid);
+      if (!proc) throw new Error(`auth.switchUser: process PID ${pid} not found`);
+      proc.user = target;
+      logger.info(`Kernel: PID ${pid} switched to user '${target}'`);
+      eventBus.emit('auth.user_changed', { pid, user: target });
+      return { pid, user: target };
+    }
+
+    // Existing proc.* handling
     switch (name) {
       case 'proc.list':
         return Array.from(processList.values()).map(p => ({
           pid: p.pid,
           name: p.name,
-          status: p.status
+          status: p.status,
+          user: p.user
         }));
 
       case 'proc.history':
         return processHistory;
 
       default:
-        // Delegate syscall to its respective handler (e.g., vfs.*, net.*, etc.)
+        // Delegate to device/event handlers (vfs, terminal, etc.)
         return await new Promise((resolve, reject) => {
           eventBus.emit(name, { ...params, resolve, reject });
         });
@@ -43,7 +65,6 @@ async function _handleSyscallRequest(name, params) {
   }
 }
 
-/** Terminate a worker process safely. */
 function _terminateWorkerProcess(proc) {
   if (proc?.worker) {
     try {
@@ -54,26 +75,32 @@ function _terminateWorkerProcess(proc) {
   }
 }
 
-// ==========================================================
-// 🧩 Kernel Object Definition
-// ==========================================================
 export const kernel = {
-  // --------------------------------------------------------
-  // 🧭 Initialization
-  // --------------------------------------------------------
   async init() {
     logger.info('Kernel: Initializing (Preemptive Mode)...');
 
+    // Listen for proc events already used
     eventBus.on('proc.exec', (params) => this.handleProcessExecution(params));
     eventBus.on('proc.kill', (data) => this._handleKillRequest(data));
+
+    // Listen for main-thread emitted auth/syscall requests
+    eventBus.on('auth.listUsers', (params) => {
+      const { resolve, reject } = params || {};
+      _handleSyscallRequest('auth.listUsers', params).then(resolve).catch(reject);
+    });
+    eventBus.on('auth.getUser', (params) => {
+      const { resolve, reject } = params || {};
+      _handleSyscallRequest('auth.getUser', params).then(resolve).catch(reject);
+    });
+    eventBus.on('auth.switchUser', (params) => {
+      const { resolve, reject } = params || {};
+      _handleSyscallRequest('auth.switchUser', params).then(resolve).catch(reject);
+    });
 
     logger.info('Kernel: Initialization complete.');
     eventBus.emit('kernel.boot_complete');
   },
 
-  // --------------------------------------------------------
-  // 💀 Process Termination Handler
-  // --------------------------------------------------------
   async _handleKillRequest({ pid, resolve, reject }) {
     const pidToKill = parseInt(pid, 10);
     const process = processList.get(pidToKill);
@@ -109,10 +136,7 @@ export const kernel = {
     }
   },
 
-  // --------------------------------------------------------
-  // 🏃‍♂️ Process Execution Entry Point
-  // --------------------------------------------------------
-  // MODIFICARE: Adăugăm `user` în parametrii destructurați
+  // entry
   async handleProcessExecution({ pipeline, onOutput, onExit, cwd, user }) {
     if (!Array.isArray(pipeline) || !pipeline.length) {
       logger.warn('Kernel: Received empty pipeline.');
@@ -124,14 +148,10 @@ export const kernel = {
     if (procInfo.runOn === 'main') {
       await this._runMainThreadProcess(procInfo, onOutput, onExit, cwd);
     } else {
-      // MODIFICARE: Pasăm `user` mai departe către _runPipelineStage
       this._runPipelineStage(pipeline, onOutput, onExit, cwd, user, null);
     }
   },
 
-  // --------------------------------------------------------
-  // 🧩 Run a Main Thread Process
-  // --------------------------------------------------------
   async _runMainThreadProcess(procInfo, onOutput, onExit, cwd) {
     const pid = nextPid++;
     const { name } = procInfo;
@@ -154,9 +174,8 @@ export const kernel = {
       worker: null,
       status: 'RUNNING',
       onExit: onExit || (() => {}),
-      historyEntry
-      // Notă: Procesele main-thread nu au nevoie de context `user` deocamdată,
-      // deoarece singurul proces de acest tip (`terminal-process`) nu face syscalls VFS.
+      historyEntry,
+      user: 'guest'
     };
     processList.set(pid, process);
 
@@ -177,10 +196,6 @@ export const kernel = {
     }
   },
 
-  // --------------------------------------------------------
-  // ⚙️ Run a Worker-Based Process (Pipeline Stage)
-  // --------------------------------------------------------
-  // MODIFICARE: Adăugăm `user` ca parametru
   _runPipelineStage(pipeline, finalOnOutput, finalOnExit, cwd, user, stdin) {
     if (!pipeline.length) {
       finalOnExit?.(0);
@@ -209,7 +224,7 @@ export const kernel = {
       status: 'RUNNING',
       onExit: finalOnExit,
       historyEntry,
-      user: user || 'guest' // MODIFICARE: Stocăm utilizatorul pe obiectul procesului
+      user: user || 'guest'
     };
     processList.set(pid, process);
 
@@ -220,20 +235,10 @@ export const kernel = {
       switch (type) {
         case 'syscall':
           try {
-            // ==========================================================
-            // AICI ESTE LOGICA CHEIE PENTRU PERMISIUNI
-            // ==========================================================
-            // 1. Găsim procesul care a făcut cererea, folosind PID-ul trimis de worker
             const callingProcess = processList.get(payload.pid);
-            // 2. Extragem utilizatorul din obiectul procesului (cu fallback la 'guest')
             const userForSyscall = callingProcess ? callingProcess.user : 'guest';
-            // 3. Creăm noii parametri pentru syscall, adăugând `user`
             const syscallParams = { ...payload.params, user: userForSyscall };
-            
-            // 4. Executăm syscall-ul cu parametrii corecți
             const result = await _handleSyscallRequest(payload.name, syscallParams);
-            // ==========================================================
-
             worker.postMessage({ type: 'syscall_result', payload: { result, callId: payload.callId } });
           } catch (error) {
             worker.postMessage({
@@ -265,11 +270,10 @@ export const kernel = {
               finalOnOutput,
               finalOnExit,
               cwd,
-              user, // MODIFICARE: Pasăm `user` la următorul stagiu din pipeline
+              user,
               outputBuffer.trimEnd()
             );
           } else if (procInfo.stdout === 'file') {
-            // MODIFICARE: Pasăm și `user` la redirectarea către fișier
             await this._handleFileRedirect(procInfo, cwd, user, outputBuffer, finalOnOutput, finalOnExit);
           } else {
             finalOnExit?.(payload.exitCode);
@@ -295,22 +299,16 @@ export const kernel = {
     worker.postMessage({ type: 'init', payload: { procInfo, cwd, pid, stdin } });
   },
 
-  // --------------------------------------------------------
-  // 📄 Handle Output Redirection to File
-  // --------------------------------------------------------
-  // MODIFICARE: Adăugăm `user` ca parametru
   async _handleFileRedirect(procInfo, cwd, user, buffer, onOutput, onExit) {
     try {
       let content = buffer.trimEnd();
       if (procInfo.append) content = '\n' + content;
 
-      // syscalls['vfs.writeFile'] este un wrapper care va ajunge tot la _handleSyscallRequest,
-      // dar pentru a fi expliciți, adăugăm `user` și aici.
       await syscalls['vfs.writeFile']({
         path: resolvePath(cwd, procInfo.outputFile),
         content,
         append: procInfo.append,
-        user: user // Asigurăm pasarea utilizatorului
+        user: user
       });
 
       onExit?.(0);
