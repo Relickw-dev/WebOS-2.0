@@ -6,11 +6,13 @@
         "**/.DS_Store": true,
         "**/Thumbs.db": true,
         "server/node_modules": true,
-        "server/package-lock.json": true
+        "server/package-lock.json": true,
+        "server/package.json": true
     },
     "hide-files.files": [
         "server/node_modules",
-        "server/package-lock.json"
+        "server/package-lock.json",
+        "server/package.json"
     ],
     "liveServer.settings.ignoreFiles": [
         "**/fs_root/**"
