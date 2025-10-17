@@ -1,4 +1,4 @@
-// File: js/kernel/worker-process.js
+// File: js/kernel/worker-process.js (FIXED VERSION)
 import { logger } from '../utils/logger.js';
 
 /**
@@ -8,7 +8,8 @@ import { logger } from '../utils/logger.js';
 
 let callIdCounter = 0;
 const syscallPromises = new Map();
-let processPID = -1; // MODIFICARE: Variabilă globală pentru a stoca PID-ul procesului curent
+let processPID = -1;
+let isInitialized = false; // NEW: Track initialization state
 
 /**
  * Trimite o cerere syscall către kernel și așteaptă răspunsul.
@@ -23,12 +24,35 @@ function syscall(name, params = {}) {
     return Promise.reject(err);
   }
 
-  const callId = callIdCounter++;
-  return new Promise((resolve, reject) => {
-    syscallPromises.set(callId, { resolve, reject });
+  // FIX #1: Prevent syscalls before initialization
+  if (!isInitialized || processPID === -1) {
+    const err = new Error(`Syscall '${name}' attempted before process initialization (PID: ${processPID})`);
+    logger.error('Worker syscall failed:', err.message);
+    return Promise.reject(err);
+  }
 
-    // MODIFICARE: Adăugăm `pid: processPID` în payload-ul trimis kernel-ului.
-    // Acest lucru permite kernel-ului să știe ce proces face cererea.
+  const callId = callIdCounter++;
+  
+  // FIX #2: Add timeout to prevent hanging syscalls
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      if (syscallPromises.has(callId)) {
+        cleanupSyscall(callId);
+        reject(new Error(`Syscall '${name}' timeout after 30s (callId=${callId})`));
+      }
+    }, 30000); // 30 second timeout
+
+    syscallPromises.set(callId, { 
+      resolve: (result) => {
+        clearTimeout(timeoutId);
+        resolve(result);
+      }, 
+      reject: (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      }
+    });
+
     postMessage({
       type: 'syscall',
       payload: { name, params, callId, pid: processPID },
@@ -71,8 +95,21 @@ function sendError(message) {
  * Închide procesul curent.
  */
 function exitProcess(code = 0) {
+  // FIX #3: Cleanup all pending syscalls on exit
+  if (syscallPromises.size > 0) {
+    logger.warn(`Worker (PID ${processPID}) exiting with ${syscallPromises.size} pending syscalls`);
+    syscallPromises.forEach((promise, callId) => {
+      promise.reject(new Error('Process terminated while syscall was pending'));
+      cleanupSyscall(callId);
+    });
+  }
+  
   postMessage({ type: 'exit', payload: { exitCode: code } });
-  logger.info(`Worker exited with code ${code}`);
+  logger.info(`Worker (PID ${processPID}) exited with code ${code}`);
+  
+  // Reset state
+  isInitialized = false;
+  processPID = -1;
 }
 
 /**
@@ -92,6 +129,8 @@ self.onmessage = async (e) => {
           promise.resolve(result);
           cleanupSyscall(callId);
           logger.debug(`Syscall ${callId} resolved successfully.`);
+        } else {
+          logger.warn(`Received result for unknown syscall ${callId}`);
         }
         break;
       }
@@ -104,20 +143,33 @@ self.onmessage = async (e) => {
           promise.reject(new Error(error || 'Unknown syscall error'));
           cleanupSyscall(callId);
           logger.warn(`Syscall ${callId} failed: ${error}`);
+        } else {
+          logger.warn(`Received error for unknown syscall ${callId}`);
         }
         break;
       }
 
       /** 🚀 Inițializare proces nou */
       case 'init': {
-        // MODIFICARE: Extragem și PID-ul din payload.
         const { procInfo, cwd, pid, stdin } = payload || {};
+        
+        // FIX #4: Validate initialization payload
         if (!procInfo || !procInfo.name) {
-          throw new Error('Invalid process initialization payload.');
+          throw new Error('Invalid process initialization payload: missing procInfo or procInfo.name');
+        }
+        
+        if (typeof pid !== 'number' || pid < 0) {
+          throw new Error(`Invalid process initialization payload: invalid PID ${pid}`);
         }
 
-        // MODIFICARE: Stocăm PID-ul în variabila globală a worker-ului.
+        // FIX #5: Prevent re-initialization
+        if (isInitialized) {
+          logger.warn(`Worker (PID ${processPID}) received duplicate init message, ignoring`);
+          break;
+        }
+
         processPID = pid;
+        isInitialized = true;
 
         logger.info(`Worker (PID ${processPID}) initializing process '${procInfo.name}' (cwd: ${cwd || '/'})`);
         await runProcess(procInfo, cwd, stdin);
@@ -140,6 +192,12 @@ self.onmessage = async (e) => {
  */
 async function runProcess(procInfo, cwd, stdin) {
   try {
+    // FIX #6: Validate process name to prevent code injection
+    const validNameRegex = /^[a-zA-Z0-9_-]+$/;
+    if (!validNameRegex.test(procInfo.name)) {
+      throw new Error(`Invalid process name: '${procInfo.name}'. Only alphanumeric, underscore, and hyphen allowed.`);
+    }
+
     // Importăm modulul de execuție (dinamic, în funcție de numele comenzii)
     const module = await import(`/js/bin/${procInfo.name}.js`);
     logger.debug(`Loaded module for '${procInfo.name}'`);
@@ -156,17 +214,36 @@ async function runProcess(procInfo, cwd, stdin) {
       syscall,
     };
 
-    // Executăm generatorul și redirecționăm rezultatele către stdout
-    for await (const result of module.logic(logicParams)) {
-      if (result && result.type === 'stdout') {
-        sendStdout(result.data);
+    // FIX #7: Add error handling for generator execution
+    try {
+      // Executăm generatorul și redirecționăm rezultatele către stdout
+      for await (const result of module.logic(logicParams)) {
+        if (result && result.type === 'stdout') {
+          sendStdout(result.data);
+        }
       }
+      exitProcess(0);
+    } catch (generatorError) {
+      logger.error(`Process '${procInfo.name}' logic failed:`, generatorError);
+      sendError(`Command execution failed: ${generatorError.message}`);
+      exitProcess(1);
     }
-
-    exitProcess(0);
   } catch (error) {
     sendError(error.message);
     exitProcess(1);
     logger.error(`Process '${procInfo.name}' crashed:`, error);
   }
 }
+
+// FIX #8: Handle worker termination gracefully
+self.addEventListener('error', (event) => {
+  logger.error('Worker unhandled error:', event.message);
+  sendError(`Worker error: ${event.message}`);
+  exitProcess(1);
+});
+
+self.addEventListener('unhandledrejection', (event) => {
+  logger.error('Worker unhandled promise rejection:', event.reason);
+  sendError(`Unhandled promise rejection: ${event.reason}`);
+  exitProcess(1);
+});

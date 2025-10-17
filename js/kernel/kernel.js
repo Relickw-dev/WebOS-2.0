@@ -1,4 +1,4 @@
-// File: js/kernel/kernel.js
+// File: js/kernel/kernel.js (FIXED VERSION)
 import { eventBus } from '../eventBus.js';
 import { syscalls } from './syscalls.js';
 import { logger } from '../utils/logger.js';
@@ -12,6 +12,16 @@ let nextPid = 1;
 // User database (kernel-owned)
 const validUsers = ['guest', 'user', 'root'];
 
+// FIX #1: Add user validation helper
+function _validateUser(user) {
+  if (!user || typeof user !== 'string') {
+    throw new Error('User must be a non-empty string');
+  }
+  if (!validUsers.includes(user)) {
+    throw new Error(`Invalid user: '${user}'. Valid users: ${validUsers.join(', ')}`);
+  }
+}
+
 // Internal syscall handler
 async function _handleSyscallRequest(name, params) {
   try {
@@ -22,18 +32,29 @@ async function _handleSyscallRequest(name, params) {
 
     if (name === 'auth.getUser') {
       const pid = params?.pid;
+      if (typeof pid !== 'number') {
+        throw new Error('auth.getUser: PID must be a number');
+      }
       const proc = processList.get(Number(pid));
-      return proc ? proc.user : 'guest';
+      if (!proc) {
+        logger.warn(`auth.getUser: Process PID ${pid} not found, returning 'guest'`);
+        return 'guest';
+      }
+      return proc.user || 'guest';
     }
 
     if (name === 'auth.switchUser') {
       const pid = Number(params?.pid);
       const target = params?.target;
-      if (!target || !validUsers.includes(target)) {
-        throw new Error(`auth.switchUser: user '${target}' not found`);
-      }
+      
+      // FIX #2: Validate user before switching
+      _validateUser(target);
+      
       const proc = processList.get(pid);
-      if (!proc) throw new Error(`auth.switchUser: process PID ${pid} not found`);
+      if (!proc) {
+        throw new Error(`auth.switchUser: process PID ${pid} not found`);
+      }
+      
       proc.user = target;
       logger.info(`Kernel: PID ${pid} switched to user '${target}'`);
       eventBus.emit('auth.user_changed', { pid, user: target });
@@ -69,6 +90,7 @@ function _terminateWorkerProcess(proc) {
   if (proc?.worker) {
     try {
       proc.worker.terminate();
+      logger.info(`Worker PID ${proc.pid} terminated successfully`);
     } catch (e) {
       logger.warn(`Failed to terminate worker PID ${proc.pid}: ${e.message}`);
     }
@@ -96,6 +118,21 @@ export const kernel = {
       const { resolve, reject } = params || {};
       _handleSyscallRequest('auth.switchUser', params).then(resolve).catch(reject);
     });
+    eventBus.on('proc.list', ({ resolve, reject }) => {
+      try {
+        const processArray = Array.from(processList.values());
+        resolve(processArray);
+      } catch (err) {
+        reject(err);
+      }
+    });
+    eventBus.on('proc.history', ({ resolve, reject }) => {
+      try {
+        resolve(processHistory);
+      } catch (err) {
+        reject(err);
+      }
+    });
 
     logger.info('Kernel: Initialization complete.');
     eventBus.emit('kernel.boot_complete');
@@ -103,6 +140,14 @@ export const kernel = {
 
   async _handleKillRequest({ pid, resolve, reject }) {
     const pidToKill = parseInt(pid, 10);
+    
+    // FIX #3: Validate PID
+    if (!Number.isFinite(pidToKill) || pidToKill < 1) {
+      const msg = `kill: Invalid PID ${pid}`;
+      logger.warn(msg);
+      return reject(new Error(msg));
+    }
+    
     const process = processList.get(pidToKill);
 
     if (!process) {
@@ -111,19 +156,20 @@ export const kernel = {
       return reject(new Error(msg));
     }
 
-    logger.info(`Kernel: Received kill signal for PID ${pidToKill}`);
+    logger.info(`Kernel: Received kill signal for PID ${pidToKill} (${process.name})`);
 
     const entry = process.historyEntry;
     if (entry) {
       entry.status = 'KILLED';
       entry.endTime = new Date();
-      entry.exitCode = 143;
+      entry.exitCode = 143; // SIGTERM exit code
     }
 
     try {
       if (process.worker) {
         _terminateWorkerProcess(process);
-        process.onExit?.(1);
+        // FIX #4: Call onExit with proper signal code
+        process.onExit?.(143);
       } else {
         eventBus.emit('proc.terminate_main', { pid: pidToKill });
       }
@@ -138,25 +184,57 @@ export const kernel = {
 
   // entry
   async handleProcessExecution({ pipeline, onOutput, onExit, cwd, user }) {
+    // FIX #5: Validate pipeline structure
     if (!Array.isArray(pipeline) || !pipeline.length) {
-      logger.warn('Kernel: Received empty pipeline.');
-      onExit?.(0);
+      logger.warn('Kernel: Received empty or invalid pipeline.');
+      onExit?.(1);
       return;
     }
 
+    // FIX #6: Validate each stage has required properties
+    for (let i = 0; i < pipeline.length; i++) {
+      const stage = pipeline[i];
+      if (!stage || typeof stage !== 'object') {
+        logger.error(`Kernel: Pipeline stage ${i} is invalid`);
+        onOutput?.({ message: `Invalid pipeline stage ${i}`, isError: true });
+        onExit?.(1);
+        return;
+      }
+      if (!stage.name || typeof stage.name !== 'string') {
+        logger.error(`Kernel: Pipeline stage ${i} missing valid 'name' property`);
+        onOutput?.({ message: `Pipeline stage ${i} missing command name`, isError: true });
+        onExit?.(1);
+        return;
+      }
+    }
+
     const procInfo = pipeline[0];
+    
+    // FIX #7: Default user to 'guest' if not provided
+    const effectiveUser = user || 'guest';
+    
+    // FIX #8: Validate user
+    try {
+      _validateUser(effectiveUser);
+    } catch (err) {
+      logger.error(`Kernel: Invalid user for process execution: ${err.message}`);
+      onOutput?.({ message: err.message, isError: true });
+      onExit?.(1);
+      return;
+    }
+
     if (procInfo.runOn === 'main') {
-      await this._runMainThreadProcess(procInfo, onOutput, onExit, cwd);
+      await this._runMainThreadProcess(procInfo, onOutput, onExit, cwd, effectiveUser);
     } else {
-      this._runPipelineStage(pipeline, onOutput, onExit, cwd, user, null);
+      this._runPipelineStage(pipeline, onOutput, onExit, cwd, effectiveUser, null);
     }
   },
 
-  async _runMainThreadProcess(procInfo, onOutput, onExit, cwd) {
+  async _runMainThreadProcess(procInfo, onOutput, onExit, cwd, user) {
     const pid = nextPid++;
     const { name } = procInfo;
 
-    logger.info(`Kernel: Launching main-thread process '${name}' (PID ${pid})`);
+    logger.info(`Kernel: Launching main-thread process '${name}' (PID ${pid}) as user '${user}'`);
 
     const historyEntry = {
       pid,
@@ -164,7 +242,8 @@ export const kernel = {
       status: 'RUNNING',
       startTime: new Date(),
       endTime: null,
-      exitCode: null
+      exitCode: null,
+      user // FIX #9: Track user in history
     };
     processHistory.push(historyEntry);
 
@@ -175,20 +254,27 @@ export const kernel = {
       status: 'RUNNING',
       onExit: onExit || (() => {}),
       historyEntry,
-      user: 'guest'
+      user
     };
     processList.set(pid, process);
 
     try {
+      // FIX #10: Validate process name before import
+      const validNameRegex = /^[a-zA-Z0-9_-]+$/;
+      if (!validNameRegex.test(name)) {
+        throw new Error(`Invalid process name: '${name}'`);
+      }
+
       const module = await import(`/js/system/${name}.js`);
       if (!module?.process?.start || typeof module.process.start !== 'function') {
         throw new Error(`Main-thread process '${name}' is invalid or missing entry point.`);
       }
 
-      await module.process.start({ pid, args: procInfo.args, cwd });
+      await module.process.start({ pid, args: procInfo.args, cwd, user });
     } catch (error) {
       logger.error(`Kernel: Failed to start main-thread process '${name}': ${error.message}`);
       historyEntry.status = 'CRASHED';
+      historyEntry.endTime = new Date();
       historyEntry.exitCode = 1;
       processList.delete(pid);
       onOutput?.({ message: error.message, isError: true });
@@ -206,6 +292,9 @@ export const kernel = {
     const remainingPipeline = pipeline.slice(1);
     const pid = nextPid++;
 
+    // FIX #11: Ensure user is always passed through pipeline
+    const effectiveUser = user || 'guest';
+
     const worker = new Worker('/js/kernel/worker-process.js', { type: 'module' });
     const historyEntry = {
       pid,
@@ -213,7 +302,8 @@ export const kernel = {
       status: 'RUNNING',
       startTime: new Date(),
       endTime: null,
-      exitCode: null
+      exitCode: null,
+      user: effectiveUser // FIX #12: Track user in history
     };
     processHistory.push(historyEntry);
 
@@ -224,11 +314,16 @@ export const kernel = {
       status: 'RUNNING',
       onExit: finalOnExit,
       historyEntry,
-      user: user || 'guest'
+      user: effectiveUser
     };
     processList.set(pid, process);
 
     let outputBuffer = '';
+
+    // FIX #13: Add worker error timeout
+    const workerTimeout = setTimeout(() => {
+      logger.warn(`Worker PID ${pid} (${procInfo.name}) has been running for over 60s`);
+    }, 60000);
 
     worker.onmessage = async (e) => {
       const { type, payload } = e.data;
@@ -236,7 +331,7 @@ export const kernel = {
         case 'syscall':
           try {
             const callingProcess = processList.get(payload.pid);
-            const userForSyscall = callingProcess ? callingProcess.user : 'guest';
+            const userForSyscall = callingProcess ? callingProcess.user : effectiveUser;
             const syscallParams = { ...payload.params, user: userForSyscall };
             const result = await _handleSyscallRequest(payload.name, syscallParams);
             worker.postMessage({ type: 'syscall_result', payload: { result, callId: payload.callId } });
@@ -259,35 +354,40 @@ export const kernel = {
         }
 
         case 'exit':
+          clearTimeout(workerTimeout); // FIX #14: Clear timeout on exit
           processList.delete(pid);
           historyEntry.status = 'TERMINATED';
           historyEntry.endTime = new Date();
           historyEntry.exitCode = payload.exitCode;
 
           if (procInfo.stdout === 'pipe') {
+            // FIX #15: Pass user to next pipeline stage
             this._runPipelineStage(
               remainingPipeline,
               finalOnOutput,
               finalOnExit,
               cwd,
-              user,
+              effectiveUser, // Explicitly pass user
               outputBuffer.trimEnd()
             );
           } else if (procInfo.stdout === 'file') {
-            await this._handleFileRedirect(procInfo, cwd, user, outputBuffer, finalOnOutput, finalOnExit);
+            // FIX #16: Pass user to file redirect handler
+            await this._handleFileRedirect(procInfo, cwd, effectiveUser, outputBuffer, finalOnOutput, finalOnExit);
           } else {
             finalOnExit?.(payload.exitCode);
           }
           break;
 
         case 'error':
-          finalOnOutput?.({ type: 'error', message: payload.message });
+          clearTimeout(workerTimeout); // FIX #17: Clear timeout on error
+          finalOnOutput?.({ message: payload.message, isError: true });
           break;
       }
     };
 
     worker.onerror = (e) => {
-      finalOnOutput?.({ type: 'error', message: `Process ${pid} error: ${e.message}` });
+      clearTimeout(workerTimeout);
+      finalOnOutput?.({ message: `Process ${pid} error: ${e.message}`, isError: true });
       _terminateWorkerProcess(process);
       processList.delete(pid);
       historyEntry.status = 'CRASHED';
@@ -304,11 +404,17 @@ export const kernel = {
       let content = buffer.trimEnd();
       if (procInfo.append) content = '\n' + content;
 
+      // FIX #18: Validate output file path
+      const outputPath = resolvePath(cwd, procInfo.outputFile);
+      if (!outputPath || outputPath === '/') {
+        throw new Error('Invalid output file path');
+      }
+
       await syscalls['vfs.writeFile']({
-        path: resolvePath(cwd, procInfo.outputFile),
+        path: outputPath,
         content,
         append: procInfo.append,
-        user: user
+        user: user // Ensure user is passed
       });
 
       onExit?.(0);

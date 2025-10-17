@@ -39,8 +39,11 @@ export const syscalls = {
   'vfs.move': (params) => makeAsyncSyscall('vfs.move', params),
   'vfs.grep': (params) => makeAsyncSyscall('vfs.grep', params),
   'vfs.chmod': (params) => makeAsyncSyscall('vfs.chmod', params),
+  
 
   // Process
+  'proc.list': (params) => makeAsyncSyscall('proc.list', params),
+  'proc.history': (params) => makeAsyncSyscall('proc.history', params),
   'proc.sleep': async ({ ms }) => {
     logger.debug(`Syscall -> proc.sleep (${ms}ms)`);
     return new Promise((resolve) => setTimeout(resolve, ms));

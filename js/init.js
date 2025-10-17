@@ -56,6 +56,17 @@ export async function startSystem() {
     launchInitialProcesses();
     
     logger.info('WebOS Init: Boot process completed. Control handed over to the kernel.');
+
+    eventBus.emit('proc.exec', {
+  pipeline: [{
+    name: 'process-manager',
+    args: [],
+    runOn: 'main'
+  }],
+  onOutput: () => {},
+  onExit: () => {},
+  cwd: '/'
+});
 }
 
 // =================================================================================================
